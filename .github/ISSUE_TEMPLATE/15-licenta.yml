@@ -27,7 +27,7 @@ body:
       label: Integrarea vizată
       description: Pentru care integrare solicitați licența?
       options:
-        - e-bloc.ro România
+        - E-bloc România
     validations:
       required: true
 
