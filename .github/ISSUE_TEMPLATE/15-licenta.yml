@@ -1,0 +1,42 @@
+name: Licență nouă
+description: Susține dezvoltarea integrărilor printr-o contribuție simbolică și primește o licență perpetuă.
+title: "[LICENTA] "
+labels:
+  - licență
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Completați formularul de mai jos pentru a solicita o licență nouă.
+
+        > **Confidențialitate:** adresa de email introdusă mai jos va fi redactată automat din această pagină în câteva secunde după trimitere și va fi transmisă confidențial doar dezvoltatorului.
+
+  - type: dropdown
+    id: tip_cerere
+    attributes:
+      label: Tipul cererii
+      description: Acest formular este destinat exclusiv cererilor de licență nouă.
+      options:
+        - Licență nouă
+    validations:
+      required: true
+
+  - type: dropdown
+    id: integrare
+    attributes:
+      label: Integrarea vizată
+      description: Pentru care integrare solicitați licența?
+      options:
+        - e-bloc.ro România
+    validations:
+      required: true
+
+  - type: input
+    id: email
+    attributes:
+      label: Adresa de email
+      description: |
+        Adresa pe care doriți să primiți licența. Va fi redactată automat din issue pentru confidențialitate.
+      placeholder: "exemplu@email.com"
+    validations:
+      required: true
