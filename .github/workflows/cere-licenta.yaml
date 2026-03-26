@@ -1,0 +1,131 @@
+name: Procesare cerere de licență
+
+on:
+  issues:
+    types: [opened]
+
+jobs:
+  procesare-licenta:
+    if: contains(github.event.issue.labels.*.name, 'licență')
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+
+    steps:
+      - name: Redactare email și publicare răspuns
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = context.payload.issue.body || '';
+            const issueNumber = context.issue.number;
+            const issueTitle = context.payload.issue.title;
+            const issueAuthor = context.payload.issue.user.login;
+
+            // ── Extragere email din formularul structurat ──
+            const emailMatch = body.match(/### Adresa de email\s*\n\s*\n\s*([^\n]+)/);
+            const email = emailMatch ? emailMatch[1].trim() : '';
+
+            // ── Extragere integrare ──
+            const integrareMatch = body.match(/### Integrarea vizată\s*\n\s*\n\s*([^\n]+)/);
+            const integrare = integrareMatch ? integrareMatch[1].trim() : 'nespecificată';
+
+            // ── Extragere tip cerere ──
+            const tipMatch = body.match(/### Tipul cererii\s*\n\s*\n\s*([^\n]+)/);
+            const tipCerere = tipMatch ? tipMatch[1].trim() : 'nespecificat';
+
+            // ── Redactare email din body-ul issue-ului ──
+            if (email && email.includes('@')) {
+              const redacted = body.replace(
+                email,
+                '`[adresă redactată — transmisă confidențial dezvoltatorului]`'
+              );
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issueNumber,
+                body: redacted
+              });
+              console.log('Email redactat din issue body');
+            } else {
+              console.log('Niciun email valid găsit în issue body');
+            }
+
+            // ── Salvare email în fișier pentru artifact ──
+            const fs = require('fs');
+            fs.mkdirSync('artifact', { recursive: true });
+            fs.writeFileSync('artifact/email-info.txt', [
+              `Issue:      #${issueNumber}`,
+              `Titlu:      ${issueTitle}`,
+              `Autor:      @${issueAuthor}`,
+              `Integrare:  ${integrare}`,
+              `Tip cerere: ${tipCerere}`,
+              `Email:      ${email || 'N/A'}`,
+              `Data:       ${new Date().toISOString()}`
+            ].join('\n'));
+
+            // ── Mascarea emailului din logurile workflow-ului ──
+            if (email) core.setSecret(email);
+
+            // ── Comentariu automat ──
+            const comment = [
+              `## Susținerea proiectului & licențiere`,
+              ``,
+              `Mulțumim pentru interes, @${issueAuthor}!`,
+              ``,
+              `Integrările Home Assistant sunt dezvoltate și întreținute constant — actualizări, compatibilitate, infrastructură, suport și documentație. Toate acestea implică un efort continuu.`,
+              ``,
+              `Proiectul rămâne accesibil, dar **continuarea sa depinde de implicarea comunității**. Nu este vorba de o vânzare sau de o taxă, ci de un model simplu: dacă integrarea îți este utilă și vrei să continue să existe, o poți susține printr-o contribuție simbolică.`,
+              ``,
+              `---`,
+              ``,
+              `### Cum funcționează`,
+              ``,
+              `**Perioadă de test** — fiecare integrare poate fi utilizată gratuit timp de **30 de zile**, fără nicio limitare.`,
+              ``,
+              `**Susținere** — după perioada de test, poți contribui prin [Buy Me a Coffee](https://buymeacoffee.com/cnecrea). Contribuția este echivalentul unei cafele — nu un abonament, nu o plată per integrare.`,
+              ``,
+              `**Ce primești:**`,
+              `- licențe **perpetue** pentru următoarele integrări: [Vehicule](https://github.com/cnecrea/vehicule), [E-ON România](https://github.com/cnecrea/eonromania), [MyElectrica](https://github.com/cnecrea/myelectrica), [Hidroelectrica](https://github.com/cnecrea/hidroelectrica), [eRovinieta](https://github.com/cnecrea/erovinieta). `,
+              `- suport în utilizare`,
+              `- acces la toate actualizările viitoare`,
+              ``,
+              `---`,
+              ``,
+              `### Pașii pentru obținerea licenței`,
+              ``,
+              `1. Accesează [Buy Me a Coffee](https://buymeacoffee.com/cnecrea) și efectuează contribuția`,
+              `2. **Introdu corect adresa de email** la contribuție — pe aceasta vei primi licențele`,
+              `3. Licențele vor fi emise și trimise automat pe email`,
+              ``,
+              `---`,
+              ``,
+              `### Informații utile`,
+              ``,
+              `- în cazul reinstalării Home Assistant, licențele pot fi reemise.`,
+              `- la restore din backup, licențele rămân active`,
+              `- utilizatorii care au susținut proiectele anterioare primesc licențele automat pe email, fără solicitare suplimentară`,
+              `- susținerea nu este per integrare — este pentru proiectul în ansamblu`,
+              ``,
+              `---`,
+              ``,
+              `> Acest sistem există pentru sustenabilitate, nu pentru monetizare. O integrare stabilă, testată și actualizată constant necesită resurse. Implicarea ta face posibilă continuarea proiectului.`,
+              ``,
+              `---`,
+              `*Adresa de email a fost preluată și redactată automat din acest issue pentru confidențialitate.*`
+            ].join('\n');
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+              body: comment
+            });
+
+            console.log('Comentariu publicat cu succes');
+
+      - name: Upload email confidențial
+        uses: actions/upload-artifact@v4
+        with:
+          name: licenta-email-${{ github.event.issue.number }}
+          path: artifact/
+          retention-days: 90
