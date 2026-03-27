@@ -112,7 +112,7 @@
       "stars": 14,
       "forks": 4,
       "watchers": 2,
-      "open_issues": 1,
+      "open_issues": 0,
       "referrers": [
         {
           "sursa": "m.facebook.com",
@@ -148,7 +148,8 @@
     }
   },
   "releases": {
+    "1.1.0": 0,
     "1.0.0": 0
   },
-  "ultima_actualizare": "2026-03-27T07:17:52Z"
+  "ultima_actualizare": "2026-03-27T17:46:09Z"
 }
