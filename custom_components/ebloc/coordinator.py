@@ -101,7 +101,40 @@ class EblocCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # Colectăm date per apartament
             per_apartment: dict[str, dict[str, Any]] = {}
 
+            # Pre-fetch: luna corectă de contoare per asociație
+            # (AppContoareGetIndexLuni.php → aLuni, prima = cea mai recentă)
+            luna_contoare_per_asoc: dict[Any, str] = {}
+            luni_tasks = {
+                id_asoc: self.api_client.async_get_contoare_luni(id_asoc)
+                for id_asoc in apartments
+            }
+            if luni_tasks:
+                luni_keys = list(luni_tasks.keys())
+                luni_results = await asyncio.gather(
+                    *luni_tasks.values(), return_exceptions=True
+                )
+                for id_asoc_key, luni_res in zip(luni_keys, luni_results):
+                    if isinstance(luni_res, Exception):
+                        _LOGGER.warning(
+                            "[Ebloc:Coordinator] ContoareGetIndexLuni eșuat "
+                            "pentru asoc %s: %s", id_asoc_key, luni_res,
+                        )
+                        continue
+                    a_luni = luni_res.get("aLuni", [])
+                    if a_luni:
+                        # aLuni poate conține stringuri sau obiecte {"luna": "..."}
+                        first = a_luni[0]
+                        if isinstance(first, str):
+                            luna_contoare_per_asoc[id_asoc_key] = first
+                        elif isinstance(first, dict):
+                            luna_contoare_per_asoc[id_asoc_key] = first.get(
+                                "luna", ""
+                            )
+
             for id_asoc, ap_list in apartments.items():
+                # Luna corectă de contoare pentru această asociație
+                luna_contoare = luna_contoare_per_asoc.get(id_asoc, luna)
+
                 for ap in ap_list:
                     # Câmpul corect este id_ap (NU id)
                     id_ap = ap.get("id_ap", ap.get("id", 0))
@@ -115,9 +148,11 @@ class EblocCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     tasks: dict[str, Any] = {}
 
                     # Contoare: AppContoareGetIndex.php (params: id_asoc, luna)
-                    if luna:
+                    # Folosim luna_contoare (din AppContoareGetIndexLuni),
+                    # NU luna din AppHomeGetAp (care poate fi luna anterioară)
+                    if luna_contoare:
                         tasks["contoare"] = self.api_client.async_get_contoare_index(
-                            id_asoc, luna
+                            id_asoc, luna_contoare
                         )
 
                     # Plătește: AppPlatesteGetAp.php (include restanță + breakdown)

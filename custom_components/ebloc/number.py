@@ -122,7 +122,7 @@ async def async_setup_entry(
 
             # Number helper pentru nr. persoane
             entities.append(
-                NrPersoaneNumber(coordinator, id_user, id_asoc_int, id_ap)
+                NrPersoaneNumber(coordinator, id_user, id_asoc_int, id_ap, ap)
             )
 
             # Number helpers per contor
@@ -173,6 +173,7 @@ class NrPersoaneNumber(EblocNumber):
     def __init__(
         self, coordinator: EblocCoordinator, id_user: int,
         id_asoc: int, id_ap: int | str,
+        ap_data: dict[str, Any] | None = None,
     ) -> None:
         super().__init__(coordinator, id_user)
         self._id_asoc = id_asoc
@@ -180,7 +181,15 @@ class NrPersoaneNumber(EblocNumber):
         self._attr_name = "Nr. persoane"
         self._attr_unique_id = f"{DOMAIN}_{id_user}_{id_asoc}_{id_ap}_nr_pers"
         self._custom_entity_id = f"number.{DOMAIN}_{id_user}_nr_persoane_selector"
+
+        # Fallback: ultimul nr. persoane din API (nr_pers / 1000)
         self._value: float = 0
+        if ap_data:
+            try:
+                nr_raw = int(ap_data.get("nr_pers", 0))
+                self._value = nr_raw // NR_PERS_MULTIPLIER
+            except (ValueError, TypeError):
+                self._value = 0
 
     @property
     def native_value(self) -> float:
@@ -224,16 +233,26 @@ class IndexContorNumber(EblocNumber):
         self._attr_unique_id = f"{DOMAIN}_{id_user}_{id_contor}_index"
         self._custom_entity_id = f"number.{DOMAIN}_{id_user}_index_{titlu_slug}_selector"
 
-        # Inițializăm cu indexul vechi curent (din aInfoIndex)
+        # Fallback: ultimul index disponibil (index_nou > index_vechi > 0)
+        # Dacă se apasă butonul din greșeală, retrimite ultimul index valid
         self._value: float = 0
-        index_vechi_str = str(contor_val.get("index_vechi", INDEX_NOT_SET))
-        try:
-            index_vechi = int(index_vechi_str)
-        except (ValueError, TypeError):
-            index_vechi = INDEX_NOT_SET
+        raw_nou = contor_val.get("index_nou")
+        raw_vechi = contor_val.get("index_vechi", INDEX_NOT_SET)
 
-        if index_vechi != INDEX_NOT_SET:
-            self._value = round(index_vechi / NR_PERS_MULTIPLIER, 3)
+        fallback = INDEX_NOT_SET
+        if raw_nou is not None:
+            try:
+                fallback = int(raw_nou)
+            except (ValueError, TypeError):
+                fallback = INDEX_NOT_SET
+        if fallback == INDEX_NOT_SET:
+            try:
+                fallback = int(raw_vechi)
+            except (ValueError, TypeError):
+                fallback = INDEX_NOT_SET
+
+        if fallback != INDEX_NOT_SET:
+            self._value = round(fallback / NR_PERS_MULTIPLIER, 3)
 
     @property
     def native_value(self) -> float:

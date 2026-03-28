@@ -502,11 +502,26 @@ class IndexContorSensor(EblocEntity):
         cv = self._find_contor_val()
         if not cv:
             return 0.0
-        index_val = cv.get("index_vechi", INDEX_NOT_SET)
-        try:
-            index_val = int(index_val)
-        except (ValueError, TypeError):
-            return 0.0
+
+        # Prioritate: index_nou (dacă există și nu e null), altfel index_vechi
+        raw_nou = cv.get("index_nou")
+        raw_vechi = cv.get("index_vechi", INDEX_NOT_SET)
+
+        # Încearcă index_nou mai întâi
+        index_val = INDEX_NOT_SET
+        if raw_nou is not None:
+            try:
+                index_val = int(raw_nou)
+            except (ValueError, TypeError):
+                index_val = INDEX_NOT_SET
+
+        # Fallback la index_vechi dacă index_nou nu e valid
+        if index_val == INDEX_NOT_SET:
+            try:
+                index_val = int(raw_vechi)
+            except (ValueError, TypeError):
+                return 0.0
+
         if index_val == INDEX_NOT_SET:
             return 0.0
         return round(index_val / NR_PERS_MULTIPLIER, 3)
@@ -529,18 +544,30 @@ class IndexContorSensor(EblocEntity):
 
         if cv:
             iv = cv.get("index_vechi", INDEX_NOT_SET)
-            inu = cv.get("index_nou", INDEX_NOT_SET)
+            raw_nou = cv.get("index_nou")
             try:
                 iv = int(iv)
             except (ValueError, TypeError):
                 iv = INDEX_NOT_SET
-            try:
-                inu = int(inu)
-            except (ValueError, TypeError):
-                inu = INDEX_NOT_SET
 
-            attributes["Index vechi"] = (
-                f"{round(iv / NR_PERS_MULTIPLIER, 3)} m³" if iv != INDEX_NOT_SET else "Nesetat"
+            inu = INDEX_NOT_SET
+            if raw_nou is not None:
+                try:
+                    inu = int(raw_nou)
+                except (ValueError, TypeError):
+                    inu = INDEX_NOT_SET
+
+            # Index actual = index_nou dacă există, altfel index_vechi
+            if inu != INDEX_NOT_SET:
+                index_actual = inu
+            elif iv != INDEX_NOT_SET:
+                index_actual = iv
+            else:
+                index_actual = INDEX_NOT_SET
+
+            attributes["Index actual"] = (
+                f"{round(index_actual / NR_PERS_MULTIPLIER, 3)} m³"
+                if index_actual != INDEX_NOT_SET else "Nesetat"
             )
             attributes["Index nou"] = (
                 f"{round(inu / NR_PERS_MULTIPLIER, 3)} m³" if inu != INDEX_NOT_SET else "Nesetat"

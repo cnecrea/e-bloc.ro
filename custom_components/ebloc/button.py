@@ -189,26 +189,42 @@ class TrimiteIndexButton(EblocButton):
 
     async def async_press(self) -> None:
         """Trimite indexul din number helper."""
+        _LOGGER.info(
+            "[Ebloc:Button] === TRIMITE INDEX APĂSAT === "
+            "contor=%s, asoc=%s, ap=%s, number_uid=%s",
+            self._id_contor, self._id_asoc, self._id_ap, self._number_uid,
+        )
+
         number_entity_id = self._find_number_entity_id(self._number_uid)
+        _LOGGER.info(
+            "[Ebloc:Button] Lookup number entity: uid=%s → entity_id=%s",
+            self._number_uid, number_entity_id,
+        )
         if number_entity_id is None:
             _LOGGER.warning(
-                "[Ebloc:Button] Nu găsesc number entity cu uid=%s",
+                "[Ebloc:Button] STOP: Nu găsesc number entity cu uid=%s",
                 self._number_uid,
             )
             return
 
         state = self.hass.states.get(number_entity_id)
+        _LOGGER.info(
+            "[Ebloc:Button] State pentru %s: state=%s",
+            number_entity_id,
+            state.state if state else "None",
+        )
         if state is None or state.state in ("unknown", "unavailable"):
             _LOGGER.warning(
-                "[Ebloc:Button] Number entity %s indisponibil", number_entity_id,
+                "[Ebloc:Button] STOP: Number entity %s indisponibil (state=%s)",
+                number_entity_id, state.state if state else "None",
             )
             return
 
         try:
             index_value = float(state.state)
         except (ValueError, TypeError):
-            _LOGGER.error(
-                "[Ebloc:Button] Valoare invalidă în %s: %s",
+            _LOGGER.warning(
+                "[Ebloc:Button] STOP: Valoare invalidă în %s: '%s'",
                 number_entity_id, state.state,
             )
             return
@@ -216,28 +232,45 @@ class TrimiteIndexButton(EblocButton):
         index_api = int(index_value * NR_PERS_MULTIPLIER)
 
         _LOGGER.info(
-            "[Ebloc:Button] Trimit index: contor=%s, val=%.3f (API=%d)",
+            "[Ebloc:Button] Trimit index la API: contor=%s, "
+            "val=%.3f m³, API_val=%d, asoc=%s, ap=%s",
             self._id_contor, index_value, index_api,
+            self._id_asoc, self._id_ap,
         )
 
-        result = await self.coordinator.api_client.async_set_index_contoare(
-            [
-                {
-                    "id_asoc": self._id_asoc,
-                    "id_ap": self._id_ap,
-                    "id_contor": self._id_contor,
-                    "index_nou": index_api,
-                }
-            ]
+        try:
+            result = await self.coordinator.api_client.async_set_index_contoare(
+                [
+                    {
+                        "id_asoc": self._id_asoc,
+                        "id_ap": self._id_ap,
+                        "id_contor": self._id_contor,
+                        "index_nou": index_api,
+                    }
+                ]
+            )
+        except Exception as err:
+            _LOGGER.warning(
+                "[Ebloc:Button] EXCEPȚIE la trimitere index: %s", err,
+                exc_info=True,
+            )
+            return
+
+        _LOGGER.info(
+            "[Ebloc:Button] Răspuns API trimitere index: %s", result,
         )
 
         if result.get("result") == "ok":
             _LOGGER.info(
-                "[Ebloc:Button] Index trimis cu succes: contor=%s", self._id_contor,
+                "[Ebloc:Button] Index trimis cu SUCCES: contor=%s, val=%d",
+                self._id_contor, index_api,
             )
             await self.coordinator.async_request_refresh()
         else:
-            _LOGGER.error("[Ebloc:Button] Eroare trimitere index: %s", result)
+            _LOGGER.warning(
+                "[Ebloc:Button] EȘEC trimitere index: contor=%s, result=%s",
+                self._id_contor, result,
+            )
 
 
 # ──────────────────────────────────────────────
@@ -265,26 +298,42 @@ class TrimiteNrPersButton(EblocButton):
 
     async def async_press(self) -> None:
         """Trimite nr. persoane din number helper."""
+        _LOGGER.info(
+            "[Ebloc:Button] === TRIMITE NR. PERSOANE APĂSAT === "
+            "asoc=%s, ap=%s, number_uid=%s",
+            self._id_asoc, self._id_ap, self._number_uid,
+        )
+
         number_entity_id = self._find_number_entity_id(self._number_uid)
+        _LOGGER.info(
+            "[Ebloc:Button] Lookup number entity: uid=%s → entity_id=%s",
+            self._number_uid, number_entity_id,
+        )
         if number_entity_id is None:
             _LOGGER.warning(
-                "[Ebloc:Button] Nu găsesc number entity cu uid=%s",
+                "[Ebloc:Button] STOP: Nu găsesc number entity cu uid=%s",
                 self._number_uid,
             )
             return
 
         state = self.hass.states.get(number_entity_id)
+        _LOGGER.info(
+            "[Ebloc:Button] State pentru %s: state=%s",
+            number_entity_id,
+            state.state if state else "None",
+        )
         if state is None or state.state in ("unknown", "unavailable"):
             _LOGGER.warning(
-                "[Ebloc:Button] Number entity %s indisponibil", number_entity_id,
+                "[Ebloc:Button] STOP: Number entity %s indisponibil (state=%s)",
+                number_entity_id, state.state if state else "None",
             )
             return
 
         try:
             nr_pers = int(float(state.state))
         except (ValueError, TypeError):
-            _LOGGER.error(
-                "[Ebloc:Button] Valoare invalidă în %s: %s",
+            _LOGGER.warning(
+                "[Ebloc:Button] STOP: Valoare invalidă în %s: '%s'",
                 number_entity_id, state.state,
             )
             return
@@ -296,7 +345,7 @@ class TrimiteNrPersButton(EblocButton):
         # folosim luna curentă (API refuză luni închise/readonly)
         luna_curenta = _dt.now().strftime("%Y-%m")
         if luna < luna_curenta:
-            _LOGGER.debug(
+            _LOGGER.info(
                 "[Ebloc:Button] Luna coordinator (%s) < luna curentă (%s), "
                 "folosesc luna curentă",
                 luna, luna_curenta,
@@ -304,18 +353,34 @@ class TrimiteNrPersButton(EblocButton):
             luna = luna_curenta
 
         _LOGGER.info(
-            "[Ebloc:Button] Trimit nr. persoane: asoc=%s, ap=%s, luna=%s, nr=%d",
+            "[Ebloc:Button] Trimit nr. persoane la API: "
+            "asoc=%s, ap=%s, luna=%s, nr_pers=%d",
             self._id_asoc, self._id_ap, luna, nr_pers,
         )
 
-        result = await self.coordinator.api_client.async_set_nr_persoane(
-            self._id_asoc, self._id_ap, luna, nr_pers
+        try:
+            result = await self.coordinator.api_client.async_set_nr_persoane(
+                self._id_asoc, self._id_ap, luna, nr_pers
+            )
+        except Exception as err:
+            _LOGGER.warning(
+                "[Ebloc:Button] EXCEPȚIE la trimitere nr. persoane: %s", err,
+                exc_info=True,
+            )
+            return
+
+        _LOGGER.info(
+            "[Ebloc:Button] Răspuns API trimitere nr. persoane: %s", result,
         )
 
         if result.get("result") == "ok":
-            _LOGGER.info("[Ebloc:Button] Nr. persoane trimis cu succes")
+            _LOGGER.info(
+                "[Ebloc:Button] Nr. persoane trimis cu SUCCES: "
+                "asoc=%s, ap=%s, luna=%s, nr=%d",
+                self._id_asoc, self._id_ap, luna, nr_pers,
+            )
             await self.coordinator.async_request_refresh()
         else:
-            _LOGGER.error(
-                "[Ebloc:Button] Eroare trimitere nr. persoane: %s", result
+            _LOGGER.warning(
+                "[Ebloc:Button] EȘEC trimitere nr. persoane: result=%s", result,
             )
