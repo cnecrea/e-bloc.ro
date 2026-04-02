@@ -22,6 +22,7 @@ Integrare custom pentru [Home Assistant](https://www.home-assistant.io/) care ad
 - **Diagnosticare integrată** — export complet pentru depanare (fără date sensibile).
 - **Multi-cont** — suport pentru mai mulți utilizatori simultani.
 - **Logging detaliat** — fiecare trimitere de index sau nr. persoane este logată pas cu pas.
+- **Sistem de licență** — evaluare gratuită la prima instalare, apoi licență validă pentru funcționalitate completă.
 
 ---
 
@@ -398,6 +399,15 @@ logger:
   logs:
     custom_components.ebloc: info
 ```
+
+---
+
+## Cerințe
+
+- **Home Assistant** 2024.1.0 sau mai nou
+- **HACS** instalat (opțional, dar recomandat)
+- **Cont e-bloc.ro** activ — [www.e-bloc.ro](https://www.e-bloc.ro/)
+- **Licență** validă — [hubinteligent.org/licenta/ebloc](https://hubinteligent.org/licenta/ebloc) (sau perioada de evaluare gratuită)
 
 ---
 
