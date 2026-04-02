@@ -6,6 +6,7 @@
 - **HACS** (Home Assistant Community Store) instalat — [instrucțiuni HACS](https://hacs.xyz/docs/use/).
 - Un cont activ pe **[e-bloc.ro](https://www.e-bloc.ro/)** (aplicația de administrare pentru asociațiile de proprietari).
 - Cel puțin o asociație cu un apartament înregistrat în contul e-bloc.ro.
+- **Licență** validă — [hubinteligent.org/licenta/ebloc](https://hubinteligent.org/licenta/ebloc) (perioadă de evaluare gratuită de 30 zile disponibilă la prima instalare).
 
 ---
 
@@ -40,6 +41,19 @@ Integrarea va:
 - Autentifica contul la serverul e-bloc.ro.
 - Descoperi automat asociațiile și apartamentele.
 - Crea toți senzorii, butoanele și number selector-ii.
+
+### Pasul 4 — Licență
+
+Integrarea oferă o **perioadă de evaluare gratuită** la prima instalare. Fără o licență validă, se creează doar senzorul „Licență necesară".
+
+Pentru a introduce o licență:
+1. **Settings → Devices & Services → E-bloc România**
+2. Click pe **Configure**
+3. Selectează **Licență**
+4. Introdu cheia de licență
+5. Click **Submit**
+
+Licențe disponibile la: [hubinteligent.org/licenta/ebloc](https://hubinteligent.org/licenta/ebloc)
 
 ---
 
