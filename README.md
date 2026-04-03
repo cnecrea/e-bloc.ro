@@ -407,7 +407,7 @@ logger:
 - **Home Assistant** 2024.1.0 sau mai nou
 - **HACS** instalat (opțional, dar recomandat)
 - **Cont e-bloc.ro** activ — [www.e-bloc.ro](https://www.e-bloc.ro/)
-- **Licență** validă — [hubinteligent.org/licenta/ebloc](https://hubinteligent.org/licenta/ebloc) (sau perioada de evaluare gratuită)
+- **Licență** validă — [hubinteligent.org/donate?ref=ebloc](https://hubinteligent.org/donate?ref=ebloc) (sau perioada de evaluare gratuită)
 
 ---
 
