@@ -6,7 +6,7 @@
 - **HACS** (Home Assistant Community Store) instalat — [instrucțiuni HACS](https://hacs.xyz/docs/use/).
 - Un cont activ pe **[e-bloc.ro](https://www.e-bloc.ro/)** (aplicația de administrare pentru asociațiile de proprietari).
 - Cel puțin o asociație cu un apartament înregistrat în contul e-bloc.ro.
-- **Licență** validă — [hubinteligent.org/licenta/ebloc](https://hubinteligent.org/licenta/ebloc) (perioadă de evaluare gratuită de 30 zile disponibilă la prima instalare).
+- **Licență** validă — [hubinteligent.org/donate?ref=ebloc](https://hubinteligent.org/donate?ref=ebloc) (perioadă de evaluare gratuită de 30 zile disponibilă la prima instalare).
 
 ---
 
