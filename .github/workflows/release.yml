@@ -129,7 +129,7 @@ jobs:
               commits = "- Nu s-au putut extrage commit-urile"
 
           # ── Generează fișierul markdown ──
-          body = f"""## e-bloc România v{new_version}
+          body = f"""## E-bloc România v{new_version}
 
           ### 📋 Modificări
 
@@ -143,7 +143,7 @@ jobs:
           |:--------:|:------------:|:--------------:|
           | {stars} | {instalari} | {clone_14z} |
 
-          Dacă integrarea **e-bloc România** îți este utilă, lasă un ⭐ pe repository — îi ajută și pe alți utilizatori să o descopere.
+          Dacă integrarea **E-bloc România** îți este utilă, lasă un ⭐ pe repository — îi ajută și pe alți utilizatori să o descopere.
 
           ---
 
