@@ -71,10 +71,11 @@ class EblocNumber(CoordinatorEntity[EblocCoordinator], NumberEntity):
 
     @property
     def device_info(self) -> DeviceInfo:
-        """Informații dispozitiv."""
+        """Informații dispozitiv — subclasele fac override cu id_asoc."""
+        id_asoc = getattr(self, "_id_asoc", self._id_user)
         return DeviceInfo(
-            identifiers={(DOMAIN, str(self._id_user))},
-            name=f"E-bloc România ({self._id_user})",
+            identifiers={(DOMAIN, f"{self._id_user}_{id_asoc}")},
+            name=f"E-bloc România ({id_asoc})",
             manufacturer="Ciprian Nicolae (cnecrea)",
             model="E-bloc România",
             entry_type=DeviceEntryType.SERVICE,
@@ -180,7 +181,7 @@ class NrPersoaneNumber(EblocNumber):
         self._id_ap = id_ap
         self._attr_name = "Nr. persoane"
         self._attr_unique_id = f"{DOMAIN}_{id_user}_{id_asoc}_{id_ap}_nr_pers"
-        self._custom_entity_id = f"number.{DOMAIN}_{id_user}_nr_persoane_selector"
+        self._custom_entity_id = f"number.{DOMAIN}_{id_user}_{id_asoc}_nr_persoane_selector"
 
         # Fallback: ultimul nr. persoane din API (nr_pers / 1000)
         self._value: float = 0
@@ -190,6 +191,16 @@ class NrPersoaneNumber(EblocNumber):
                 self._value = nr_raw // NR_PERS_MULTIPLIER
             except (ValueError, TypeError):
                 self._value = 0
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        return DeviceInfo(
+            identifiers={(DOMAIN, f"{self._id_user}_{self._id_asoc}")},
+            name=f"E-bloc România ({self._id_asoc})",
+            manufacturer="Ciprian Nicolae (cnecrea)",
+            model="E-bloc România",
+            entry_type=DeviceEntryType.SERVICE,
+        )
 
     @property
     def native_value(self) -> float:
@@ -230,8 +241,8 @@ class IndexContorNumber(EblocNumber):
         titlu_slug = ha_slugify(titlu)
 
         self._attr_name = f"Index {titlu} (selector)"
-        self._attr_unique_id = f"{DOMAIN}_{id_user}_{id_contor}_index"
-        self._custom_entity_id = f"number.{DOMAIN}_{id_user}_index_{titlu_slug}_selector"
+        self._attr_unique_id = f"{DOMAIN}_{id_user}_{id_asoc}_{id_contor}_index"
+        self._custom_entity_id = f"number.{DOMAIN}_{id_user}_{id_asoc}_index_{titlu_slug}_selector"
 
         # Fallback: ultimul index disponibil (index_nou > index_vechi > 0)
         # Dacă se apasă butonul din greșeală, retrimite ultimul index valid
@@ -253,6 +264,16 @@ class IndexContorNumber(EblocNumber):
 
         if fallback != INDEX_NOT_SET:
             self._value = round(fallback / NR_PERS_MULTIPLIER, 3)
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        return DeviceInfo(
+            identifiers={(DOMAIN, f"{self._id_user}_{self._id_asoc}")},
+            name=f"E-bloc România ({self._id_asoc})",
+            manufacturer="Ciprian Nicolae (cnecrea)",
+            model="E-bloc România",
+            entry_type=DeviceEntryType.SERVICE,
+        )
 
     @property
     def native_value(self) -> float:

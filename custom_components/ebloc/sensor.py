@@ -42,6 +42,33 @@ _LOGGER = logging.getLogger(__name__)
 
 
 # ──────────────────────────────────────────────
+# Device helpers — un device per asociație
+# ──────────────────────────────────────────────
+def _first_association_id(coordinator: EblocCoordinator) -> int | None:
+    """Returnează id-ul primei asociații din coordinator data."""
+    data = coordinator.data or {}
+    apartments = data.get("apartments", {})
+    if apartments:
+        first_key = next(iter(apartments))
+        try:
+            return int(first_key)
+        except (ValueError, TypeError):
+            return None
+    return None
+
+
+def _association_device(id_user: int, id_asoc) -> DeviceInfo:
+    """Device per asociație — fiecare asociație are propriul dispozitiv."""
+    return DeviceInfo(
+        identifiers={(DOMAIN, f"{id_user}_{id_asoc}")},
+        name=f"E-bloc România ({id_asoc})",
+        manufacturer="Ciprian Nicolae (cnecrea)",
+        model="E-bloc România",
+        entry_type=DeviceEntryType.SERVICE,
+    )
+
+
+# ──────────────────────────────────────────────
 # Clasă de bază (pattern IDENTIC cu eonromania)
 # ──────────────────────────────────────────────
 class EblocEntity(CoordinatorEntity[EblocCoordinator], SensorEntity):
@@ -73,14 +100,16 @@ class EblocEntity(CoordinatorEntity[EblocCoordinator], SensorEntity):
 
     @property
     def device_info(self) -> DeviceInfo:
-        """Informații dispozitiv."""
-        return DeviceInfo(
-            identifiers={(DOMAIN, str(self._id_user))},
-            name=f"E-bloc România ({self._id_user})",
-            manufacturer="Ciprian Nicolae (cnecrea)",
-            model="E-bloc România",
-            entry_type=DeviceEntryType.SERVICE,
-        )
+        """Device implicit — prima asociație (override în subclase)."""
+        id_asoc = getattr(self, "_id_asoc", None)
+        if id_asoc is not None:
+            return _association_device(self._id_user, id_asoc)
+        # Fallback: prima asociație din coordinator
+        first_asoc = _first_association_id(self.coordinator)
+        if first_asoc is not None:
+            return _association_device(self._id_user, first_asoc)
+        # Ultimul resort — nu ar trebui să ajungă aici
+        return _association_device(self._id_user, self._id_user)
 
     def _get_ap_data(self, id_asoc, id_ap) -> dict[str, Any]:
         """Returnează datele per apartament din coordinator."""
@@ -105,6 +134,9 @@ async def async_setup_entry(
     license_valid = is_license_valid(hass)
     licenta_uid = f"{DOMAIN}_licenta_{id_user}"
 
+    # Prima asociație — folosită de entitățile globale (cont, carduri, licență)
+    first_asoc = _first_association_id(coordinator)
+
     if not license_valid:
         registru = er.async_get(hass)
         for entry_reg in er.async_entries_for_config_entry(
@@ -116,7 +148,7 @@ async def async_setup_entry(
             ):
                 registru.async_remove(entry_reg.entity_id)
         async_add_entities(
-            [LicentaNecesaraSensor(coordinator, id_user)],
+            [LicentaNecesaraSensor(coordinator, id_user, first_asoc)],
             update_before_add=True,
         )
         return
@@ -129,11 +161,11 @@ async def async_setup_entry(
 
     entities: list[SensorEntity] = []
 
-    # 1. Cont utilizator (global)
-    entities.append(ContUtilizatorSensor(coordinator, id_user))
+    # 1. Cont utilizator (prima asociație)
+    entities.append(ContUtilizatorSensor(coordinator, id_user, first_asoc))
 
-    # 2. Carduri salvate (global)
-    entities.append(CarduriSensor(coordinator, id_user))
+    # 2. Carduri salvate (prima asociație)
+    entities.append(CarduriSensor(coordinator, id_user, first_asoc))
 
     # Senzori per apartament
     data = coordinator.data or {}
@@ -226,8 +258,13 @@ class LicentaNecesaraSensor(EblocEntity):
 
     _attr_icon = "mdi:license"
 
-    def __init__(self, coordinator: EblocCoordinator, id_user: int) -> None:
+    def __init__(
+        self, coordinator: EblocCoordinator, id_user: int,
+        id_asoc: int | None = None,
+    ) -> None:
         super().__init__(coordinator, id_user)
+        if id_asoc is not None:
+            self._id_asoc = id_asoc
         self._attr_name = "Licență necesară"
         self._attr_unique_id = f"{DOMAIN}_licenta_{id_user}"
         self._custom_entity_id = f"sensor.{DOMAIN}_{id_user}_licenta_necesara"
@@ -261,8 +298,13 @@ class ContUtilizatorSensor(EblocEntity):
 
     _attr_icon = "mdi:account"
 
-    def __init__(self, coordinator: EblocCoordinator, id_user: int) -> None:
+    def __init__(
+        self, coordinator: EblocCoordinator, id_user: int,
+        id_asoc: int | None = None,
+    ) -> None:
         super().__init__(coordinator, id_user)
+        if id_asoc is not None:
+            self._id_asoc = id_asoc
         self._attr_name = "Cont utilizator"
         self._attr_unique_id = f"{DOMAIN}_{id_user}_cont"
         self._custom_entity_id = f"sensor.{DOMAIN}_{id_user}_cont_utilizator"
@@ -339,7 +381,11 @@ class AsociatieSensor(EblocEntity):
         self._assoc_info = assoc_info
         self._attr_name = f"Asociație"
         self._attr_unique_id = f"{DOMAIN}_{id_user}_{id_asoc}_asociatie"
-        self._custom_entity_id = f"sensor.{DOMAIN}_{id_user}_asociatie_{id_asoc}"
+        self._custom_entity_id = f"sensor.{DOMAIN}_{id_user}_{id_asoc}_asociatie"
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        return _association_device(self._id_user, self._id_asoc)
 
     def _get_assoc_info(self) -> dict[str, Any]:
         """Caută datele actualizate din coordinator."""
@@ -493,8 +539,12 @@ class IndexContorSensor(EblocEntity):
         titlu_slug = ha_slugify(titlu)
         self._titlu = titlu
         self._attr_name = f"Index {titlu}"
-        self._attr_unique_id = f"{DOMAIN}_{id_user}_{id_contor}"
-        self._custom_entity_id = f"sensor.{DOMAIN}_{id_user}_index_{titlu_slug}"
+        self._attr_unique_id = f"{DOMAIN}_{id_user}_{id_asoc}_{id_contor}"
+        self._custom_entity_id = f"sensor.{DOMAIN}_{id_user}_{id_asoc}_index_{titlu_slug}"
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        return _association_device(self._id_user, self._id_asoc)
 
     def _find_contor_val(self) -> dict[str, Any] | None:
         """Caută datele contorului în aInfoIndex actualizat."""
@@ -622,7 +672,11 @@ class FacturaRestantaSensor(EblocEntity):
         self._ap_info = ap_info
         self._attr_name = "Factură restantă"
         self._attr_unique_id = f"{DOMAIN}_{id_user}_{id_asoc}_{id_ap}_factura_restanta"
-        self._custom_entity_id = f"sensor.{DOMAIN}_{id_user}_factura_restanta"
+        self._custom_entity_id = f"sensor.{DOMAIN}_{id_user}_{id_asoc}_factura_restanta"
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        return _association_device(self._id_user, self._id_asoc)
 
     def _get_total_plata(self) -> int:
         """Returnează total_plata din API (în bani)."""
@@ -729,7 +783,11 @@ class ArhivaPlatiSensor(EblocEntity):
         self._id_ap = id_ap
         self._attr_name = "Arhivă plăți"
         self._attr_unique_id = f"{DOMAIN}_{id_user}_{id_asoc}_{id_ap}_plati"
-        self._custom_entity_id = f"sensor.{DOMAIN}_{id_user}_arhiva_plati"
+        self._custom_entity_id = f"sensor.{DOMAIN}_{id_user}_{id_asoc}_arhiva_plati"
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        return _association_device(self._id_user, self._id_asoc)
 
     def _get_chitante(self) -> list[dict[str, Any]]:
         """Returnează lista de chitanțe din coordinator."""
@@ -796,7 +854,11 @@ class NrPersoaneSensor(EblocEntity):
         self._id_ap = id_ap
         self._attr_name = "Număr persoane"
         self._attr_unique_id = f"{DOMAIN}_{id_user}_{id_asoc}_{id_ap}_nr_pers"
-        self._custom_entity_id = f"sensor.{DOMAIN}_{id_user}_numar_persoane"
+        self._custom_entity_id = f"sensor.{DOMAIN}_{id_user}_{id_asoc}_numar_persoane"
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        return _association_device(self._id_user, self._id_asoc)
 
     @property
     def native_value(self) -> int | str:
@@ -839,7 +901,11 @@ class TicheteSensor(EblocEntity):
         self._id_ap = id_ap
         self._attr_name = "Tichete"
         self._attr_unique_id = f"{DOMAIN}_{id_user}_{id_asoc}_{id_ap}_tichete"
-        self._custom_entity_id = f"sensor.{DOMAIN}_{id_user}_tichete"
+        self._custom_entity_id = f"sensor.{DOMAIN}_{id_user}_{id_asoc}_tichete"
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        return _association_device(self._id_user, self._id_asoc)
 
     @property
     def native_value(self) -> str:
@@ -888,8 +954,13 @@ class CarduriSensor(EblocEntity):
 
     _attr_icon = "mdi:credit-card-multiple"
 
-    def __init__(self, coordinator: EblocCoordinator, id_user: int) -> None:
+    def __init__(
+        self, coordinator: EblocCoordinator, id_user: int,
+        id_asoc: int | None = None,
+    ) -> None:
         super().__init__(coordinator, id_user)
+        if id_asoc is not None:
+            self._id_asoc = id_asoc
         self._attr_name = "Carduri salvate"
         self._attr_unique_id = f"{DOMAIN}_{id_user}_carduri"
         self._custom_entity_id = f"sensor.{DOMAIN}_{id_user}_carduri_salvate"
@@ -957,7 +1028,11 @@ class CitirePermisaSensor(EblocEntity):
         self._id_ap = id_ap
         self._attr_name = "Citire permisă"
         self._attr_unique_id = f"{DOMAIN}_{id_user}_{id_asoc}_{id_ap}_citire_permisa"
-        self._custom_entity_id = f"sensor.{DOMAIN}_{id_user}_citire_permisa"
+        self._custom_entity_id = f"sensor.{DOMAIN}_{id_user}_{id_asoc}_citire_permisa"
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        return _association_device(self._id_user, self._id_asoc)
 
     def _get_home_ap(self) -> dict[str, Any]:
         """Date din home_ap_data per id_asoc."""

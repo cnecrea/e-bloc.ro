@@ -65,10 +65,11 @@ class EblocButton(CoordinatorEntity[EblocCoordinator], ButtonEntity):
 
     @property
     def device_info(self) -> DeviceInfo:
-        """Informații dispozitiv."""
+        """Informații dispozitiv — subclasele fac override cu id_asoc."""
+        id_asoc = getattr(self, "_id_asoc", self._id_user)
         return DeviceInfo(
-            identifiers={(DOMAIN, str(self._id_user))},
-            name=f"E-bloc România ({self._id_user})",
+            identifiers={(DOMAIN, f"{self._id_user}_{id_asoc}")},
+            name=f"E-bloc România ({id_asoc})",
             manufacturer="Ciprian Nicolae (cnecrea)",
             model="E-bloc România",
             entry_type=DeviceEntryType.SERVICE,
@@ -181,11 +182,21 @@ class TrimiteIndexButton(EblocButton):
         titlu = contor_def.get("titlu", f"Contor {id_contor}")
         titlu_slug = ha_slugify(titlu)
         self._attr_name = f"Trimite index {titlu}"
-        self._attr_unique_id = f"{DOMAIN}_{id_user}_{id_contor}_trimite_index"
-        self._custom_entity_id = f"button.{DOMAIN}_{id_user}_trimite_index_{titlu_slug}"
+        self._attr_unique_id = f"{DOMAIN}_{id_user}_{id_asoc}_{id_contor}_trimite_index"
+        self._custom_entity_id = f"button.{DOMAIN}_{id_user}_{id_asoc}_trimite_index_{titlu_slug}"
 
         # unique_id al number entity corespunzător
-        self._number_uid = f"{DOMAIN}_{id_user}_{id_contor}_index"
+        self._number_uid = f"{DOMAIN}_{id_user}_{id_asoc}_{id_contor}_index"
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        return DeviceInfo(
+            identifiers={(DOMAIN, f"{self._id_user}_{self._id_asoc}")},
+            name=f"E-bloc România ({self._id_asoc})",
+            manufacturer="Ciprian Nicolae (cnecrea)",
+            model="E-bloc România",
+            entry_type=DeviceEntryType.SERVICE,
+        )
 
     async def async_press(self) -> None:
         """Trimite indexul din number helper."""
@@ -291,10 +302,20 @@ class TrimiteNrPersButton(EblocButton):
         self._luna = luna
         self._attr_name = "Trimite nr. persoane"
         self._attr_unique_id = f"{DOMAIN}_{id_user}_{id_asoc}_{id_ap}_trimite_nr_pers"
-        self._custom_entity_id = f"button.{DOMAIN}_{id_user}_trimite_nr_persoane"
+        self._custom_entity_id = f"button.{DOMAIN}_{id_user}_{id_asoc}_trimite_nr_persoane"
 
         # unique_id al number entity corespunzător
         self._number_uid = f"{DOMAIN}_{id_user}_{id_asoc}_{id_ap}_nr_pers"
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        return DeviceInfo(
+            identifiers={(DOMAIN, f"{self._id_user}_{self._id_asoc}")},
+            name=f"E-bloc România ({self._id_asoc})",
+            manufacturer="Ciprian Nicolae (cnecrea)",
+            model="E-bloc România",
+            entry_type=DeviceEntryType.SERVICE,
+        )
 
     async def async_press(self) -> None:
         """Trimite nr. persoane din number helper."""

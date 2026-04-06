@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
@@ -104,6 +104,8 @@ class EblocCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # Pre-fetch: luna corectă de contoare per asociație
             # (AppContoareGetIndexLuni.php → aLuni, prima = cea mai recentă)
             luna_contoare_per_asoc: dict[Any, str] = {}
+            luna_fallback = luna or datetime.now().strftime("%Y-%m")
+
             luni_tasks = {
                 id_asoc: self.api_client.async_get_contoare_luni(id_asoc)
                 for id_asoc in apartments
@@ -113,6 +115,10 @@ class EblocCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 luni_results = await asyncio.gather(
                     *luni_tasks.values(), return_exceptions=True
                 )
+
+                # Asociații care au nevoie de retry (nologin → sesiune expirată)
+                retry_asoc: list[Any] = []
+
                 for id_asoc_key, luni_res in zip(luni_keys, luni_results):
                     if isinstance(luni_res, Exception):
                         _LOGGER.warning(
@@ -120,6 +126,16 @@ class EblocCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                             "pentru asoc %s: %s", id_asoc_key, luni_res,
                         )
                         continue
+
+                    result = luni_res.get("result", "")
+                    if result == "nologin":
+                        _LOGGER.info(
+                            "[Ebloc:Coordinator] ContoareGetIndexLuni nologin "
+                            "pentru asoc %s — programăm retry", id_asoc_key,
+                        )
+                        retry_asoc.append(id_asoc_key)
+                        continue
+
                     a_luni = luni_res.get("aLuni", [])
                     if a_luni:
                         # aLuni poate conține stringuri sau obiecte {"luna": "..."}
@@ -131,9 +147,55 @@ class EblocCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                                 "luna", ""
                             )
 
+                # Retry pentru asociațiile cu nologin (re-autentificare)
+                if retry_asoc:
+                    _LOGGER.info(
+                        "[Ebloc:Coordinator] Re-autentificare pentru retry "
+                        "ContoareGetIndexLuni: %s", retry_asoc,
+                    )
+                    await self.api_client.async_ensure_authenticated()
+                    retry_tasks = {
+                        asoc_id: self.api_client.async_get_contoare_luni(asoc_id)
+                        for asoc_id in retry_asoc
+                    }
+                    retry_keys = list(retry_tasks.keys())
+                    retry_results = await asyncio.gather(
+                        *retry_tasks.values(), return_exceptions=True
+                    )
+                    for id_asoc_key, luni_res in zip(retry_keys, retry_results):
+                        if isinstance(luni_res, Exception):
+                            _LOGGER.warning(
+                                "[Ebloc:Coordinator] ContoareGetIndexLuni retry "
+                                "eșuat pentru asoc %s: %s",
+                                id_asoc_key, luni_res,
+                            )
+                            continue
+                        a_luni = luni_res.get("aLuni", [])
+                        if a_luni:
+                            first = a_luni[0]
+                            if isinstance(first, str):
+                                luna_contoare_per_asoc[id_asoc_key] = first
+                            elif isinstance(first, dict):
+                                luna_contoare_per_asoc[id_asoc_key] = first.get(
+                                    "luna", ""
+                                )
+
             for id_asoc, ap_list in apartments.items():
                 # Luna corectă de contoare pentru această asociație
-                luna_contoare = luna_contoare_per_asoc.get(id_asoc, luna)
+                # Fallback: luna din AppHomeGetAp sau luna curentă (datetime)
+                luna_contoare = luna_contoare_per_asoc.get(
+                    id_asoc, luna_fallback
+                )
+                if id_asoc not in luna_contoare_per_asoc:
+                    _LOGGER.info(
+                        "[Ebloc:Coordinator] Asoc %s: luna_contoare lipsă din "
+                        "GetIndexLuni, fallback → %s", id_asoc, luna_contoare,
+                    )
+                else:
+                    _LOGGER.info(
+                        "[Ebloc:Coordinator] Asoc %s: luna_contoare=%s "
+                        "(din GetIndexLuni)", id_asoc, luna_contoare,
+                    )
 
                 for ap in ap_list:
                     # Câmpul corect este id_ap (NU id)
