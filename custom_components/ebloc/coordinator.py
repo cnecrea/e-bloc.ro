@@ -27,7 +27,7 @@ from homeassistant.helpers.update_coordinator import (
 )
 
 from .api import EblocApiClient
-from .const import DEFAULT_UPDATE_INTERVAL
+from .const import DEFAULT_UPDATE_INTERVAL, DOMAIN, LICENSE_DATA_KEY
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -78,6 +78,12 @@ class EblocCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "get_info": {...},
         }
         """
+        # Verificare licență — nu fetchuim date dacă licența/trial nu e validă
+        license_mgr = self.hass.data.get(DOMAIN, {}).get(LICENSE_DATA_KEY)
+        if license_mgr and not license_mgr.is_valid:
+            _LOGGER.debug("[E-Bloc] Licență invalidă — se omit apelurile API")
+            return self.data or {}
+
         _LOGGER.debug(
             "[Ebloc:Coordinator] Actualizare #%d", self._refresh_counter
         )
