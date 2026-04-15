@@ -458,7 +458,7 @@ custom_components/ebloc/
 
 - **Issues**: [github.com/cnecrea/e-bloc.ro/issues](https://github.com/cnecrea/e-bloc.ro/issues)
 - **Documentație**: [github.com/cnecrea/e-bloc.ro](https://github.com/cnecrea/e-bloc.ro)
-- **Licență**: [hubinteligent.org/licenta/ebloc](https://hubinteligent.org/donate?ref=ebloc)
+- **Licență**: [hubinteligent.org/donate?ref=ebloc](https://hubinteligent.org/donate?ref=ebloc)
 
 ---
 
