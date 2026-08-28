@@ -5305,6 +5305,28 @@
           "vizite": 1,
           "vizitatori_unici": 1
         }
+      ],
+      "clones_total": 5,
+      "clones_unice": 3,
+      "views_total": 0,
+      "views_unice": 0
+    },
+    "2026-08-28": {
+      "stars": 23,
+      "forks": 6,
+      "watchers": 2,
+      "open_issues": 0,
+      "referrers": [
+        {
+          "sursa": "Google",
+          "vizite": 2,
+          "vizitatori_unici": 2
+        },
+        {
+          "sursa": "github.com",
+          "vizite": 2,
+          "vizitatori_unici": 1
+        }
       ]
     }
   },
@@ -5321,5 +5343,5 @@
     "1.1.0": 3,
     "1.0.0": 3
   },
-  "ultima_actualizare": "2026-08-27T17:30:49Z"
+  "ultima_actualizare": "2026-08-28T18:26:43Z"
 }
