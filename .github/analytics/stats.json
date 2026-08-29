@@ -5328,10 +5328,28 @@
           "vizitatori_unici": 1
         }
       ]
+    },
+    "2026-08-29": {
+      "stars": 23,
+      "forks": 6,
+      "watchers": 2,
+      "open_issues": 0,
+      "referrers": [
+        {
+          "sursa": "Google",
+          "vizite": 2,
+          "vizitatori_unici": 2
+        },
+        {
+          "sursa": "github.com",
+          "vizite": 2,
+          "vizitatori_unici": 1
+        }
+      ]
     }
   },
   "releases": {
-    "1.5.5": 2,
+    "1.5.5": 3,
     "1.5.4": 2,
     "1.5.3": 5,
     "1.5.2": 2,
@@ -5343,5 +5361,5 @@
     "1.1.0": 3,
     "1.0.0": 3
   },
-  "ultima_actualizare": "2026-08-28T18:26:43Z"
+  "ultima_actualizare": "2026-08-29T12:32:59Z"
 }
