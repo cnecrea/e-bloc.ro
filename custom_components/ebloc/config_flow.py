@@ -14,7 +14,7 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant import config_entries
-from homeassistant.config_entries import ConfigFlowResult
+from homeassistant.config_entries import ConfigEntryState, ConfigFlowResult
 from homeassistant.core import callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers import selector
@@ -359,6 +359,15 @@ class EblocOptionsFlow(config_entries.OptionsFlow):
                         title=f"E-bloc ({email})",
                         unique_id=email.lower(),
                     )
+                    if self.config_entry.state in (
+                        ConfigEntryState.SETUP_RETRY,
+                        ConfigEntryState.SETUP_ERROR,
+                    ):
+                        # Intrarea nu rulează → listener-ul de update nu e activ;
+                        # reîncercăm imediat cu noile date.
+                        self.hass.config_entries.async_schedule_reload(
+                            self.config_entry.entry_id
+                        )
                     return self.async_create_entry(data=dict(self.config_entry.options))
                 else:
                     errors["base"] = "autodiscover_failed"
