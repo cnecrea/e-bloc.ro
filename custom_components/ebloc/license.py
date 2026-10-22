@@ -46,6 +46,9 @@ _FP_SALT = "eB10c_R0m@n1a_Ha$h_2026!vQ"
 # Identificator integrare — trimis la server în fiecare request
 INTEGRATION = "ebloc"
 
+# Timeout pentru verificarea care blochează pornirea (doar fără stare locală utilizabilă)
+_STARTUP_TIMEOUT_SEC = 10
+
 # Erori /validate care înseamnă că licența NU mai e activă pe acest dispozitiv
 _VALIDATE_DEFINITIVE_ERRORS = ("not_active", "fingerprint_mismatch", "invalid_key", "expired")
 
@@ -185,7 +188,15 @@ class LicenseManager:
             )
             self._data.pop("status_token", None)
 
-        await self.async_check_status()
+        if self._is_status_cache_valid() or self._is_within_grace_period():
+            # Pornirea Home Assistant NU așteaptă serverul de licențe când există o
+            # stare locală utilizabilă (cache valid sau perioadă de grație):
+            # verificarea se face în fundal, de timer-ul din __init__.py.
+            _LOGGER.debug("[Ebloc:License] Stare locală utilizabilă — verificare în fundal")
+        else:
+            # Prima pornire / grație depășită: statusul e necesar acum, dar cu
+            # timeout scurt (un server căzut nu ține pornirea 30s).
+            await self.async_check_status(timeout=_STARTUP_TIMEOUT_SEC)
         self._loaded = True
 
         final_status = self.status
@@ -387,7 +398,9 @@ class LicenseManager:
 
     # ─── Verificare status la server ───
 
-    async def async_check_status(self, force: bool = False) -> dict[str, Any]:
+    async def async_check_status(
+        self, force: bool = False, timeout: int = 30
+    ) -> dict[str, Any]:
         """Statusul de la server (/check), sau din cache dacă e încă valid.
 
         `force=True` ignoră cache-ul (după activare/dezactivare sau când
@@ -397,9 +410,9 @@ class LicenseManager:
         async with self._check_lock:
             if not force and self._is_status_cache_valid():
                 return self._status_token
-            return await self._async_refresh_status()
+            return await self._async_refresh_status(timeout)
 
-    async def _async_refresh_status(self) -> dict[str, Any]:
+    async def _async_refresh_status(self, timeout: int = 30) -> dict[str, Any]:
         """Cere statusul la server. Apelat doar cu _check_lock deținut."""
         payload = {
             "fingerprint": self._fingerprint,
@@ -410,7 +423,7 @@ class LicenseManager:
             "ha_version": self._ha_version,
         }
         try:
-            http_status, result = await self._async_signed_post("check", payload)
+            http_status, result = await self._async_signed_post("check", payload, timeout)
         except Exception as err:  # noqa: BLE001 — rețea, timeout, DNS
             self._register_failure("server inaccesibil la /check — %s", err)
             return self._status_token
@@ -459,11 +472,11 @@ class LicenseManager:
         # Heartbeat-ul licenței: WebAPI ține evidența instalărilor licențiate
         # active (last_heartbeat, versiuni) DOAR prin /validate.
         if server_status == "licensed":
-            await self._async_validate()
+            await self._async_validate(timeout)
 
         return self._status_token
 
-    async def _async_validate(self) -> bool:
+    async def _async_validate(self, timeout: int = 30) -> bool:
         """Trimite /validate pentru licența activă. Apelat doar cu _check_lock deținut."""
         key = self._status_token.get("license_key") or self._data.get("license_key")
         if not key:
@@ -477,7 +490,7 @@ class LicenseManager:
             "ha_version": self._ha_version,
         }
         try:
-            http_status, result = await self._async_signed_post("validate", payload)
+            http_status, result = await self._async_signed_post("validate", payload, timeout)
         except Exception as err:  # noqa: BLE001
             _LOGGER.debug("[Ebloc:License] /validate eșuat (rețea) — %s", err)
             return False
@@ -494,7 +507,7 @@ class LicenseManager:
             # nu mai așteptăm expirarea cache-ului — cerem imediat statusul real.
             self._revalidating = True
             try:
-                await self._async_refresh_status()
+                await self._async_refresh_status(timeout)
             finally:
                 self._revalidating = False
         return False
