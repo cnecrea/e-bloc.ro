@@ -26,6 +26,7 @@ from homeassistant.components.number import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -100,6 +101,12 @@ async def async_setup_entry(
 ) -> None:
     """Configurează number entities."""
     if not is_license_valid(hass):
+        # Fără licență nu există date → entitățile nu pot fi create. Le scoatem din
+        # registru (ca la senzori), altfel HA le afișează „nu mai sunt furnizate".
+        registru = er.async_get(hass)
+        for entry_reg in er.async_entries_for_config_entry(registru, entry.entry_id):
+            if entry_reg.domain == "number":
+                registru.async_remove(entry_reg.entity_id)
         _LOGGER.debug("[Ebloc:Number] Licență invalidă — skip platform number")
         return
 

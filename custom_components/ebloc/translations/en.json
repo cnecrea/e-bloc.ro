@@ -64,7 +64,8 @@
       "license_key_expired": "License key has expired.",
       "license_fingerprint_mismatch": "Key does not match this device.",
       "license_network_error": "Network error while checking license.",
-      "license_server_error": "Server error while checking license."
+      "license_server_error": "Server error while checking license.",
+      "already_configured": "This e-bloc account is already configured."
     }
   }
 }

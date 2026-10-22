@@ -26,12 +26,14 @@ async def async_get_config_entry_diagnostics(
 ) -> dict[str, Any]:
     """Returnează datele de diagnostic pentru E-bloc România."""
 
-    # ── Licență (fingerprint + cheie mascată) ──
+    # ── Licență (fingerprint TRUNCHIAT + cheie mascată) ──
+    # Fingerprint-ul complet NU apare în diagnostic: diagnosticele se atașează la
+    # issue-uri publice, iar serverul de licențe acceptă cereri semnate cu fingerprint.
     license_mgr = hass.data.get(DOMAIN, {}).get(LICENSE_DATA_KEY)
     licenta_info: dict[str, Any] = {}
     if license_mgr:
         licenta_info = {
-            "fingerprint": license_mgr.fingerprint,
+            "fingerprint": license_mgr.fingerprint[:16] + "...",
             "status": license_mgr.status,
             "license_key": license_mgr.license_key_masked,
             "is_valid": license_mgr.is_valid,
@@ -78,7 +80,9 @@ async def async_get_config_entry_diagnostics(
     # ── Config entry (fără date sensibile) ──
     return {
         "intrare": {
-            "titlu": entry.title,
+            "titlu": entry.title.replace(
+                entry.data.get("email", "") or "\0", mascheaza_email(entry.data.get("email", ""))
+            ),
             "versiune": entry.version,
             "domeniu": DOMAIN,
             "email": mascheaza_email(entry.data.get("email", "")),

@@ -504,15 +504,17 @@ class EblocApiClient:
         if nr_pers < 0 or nr_pers > 10:
             return {"result": "ERROR", "error": f"nr_pers={nr_pers} invalid (0-10)"}
 
-        return await self._api_get(
-            "AppHomeSetNrPers.php",
-            {
-                "session_id": self._session_id,
-                "id_asoc": id_asoc,
-                "id_ap": id_ap,
-                "luna": luna,
-                "nr_pers": nr_pers * NR_PERS_MULTIPLIER,
-            },
+        return await self._with_relogin(
+            lambda: self._api_get(
+                "AppHomeSetNrPers.php",
+                {
+                    "session_id": self._session_id,
+                    "id_asoc": id_asoc,
+                    "id_ap": id_ap,
+                    "luna": luna,
+                    "nr_pers": nr_pers * NR_PERS_MULTIPLIER,
+                },
+            )
         )
 
     async def async_set_index_contoare(
@@ -538,12 +540,25 @@ class EblocApiClient:
                 "img_guid": "",
             })
 
-        payload = {
-            "session_id": self._session_id,
-            "aIndex": a_index,
-        }
+        return await self._with_relogin(
+            lambda: self._api_post_json(
+                "AppContoareSetIndexes.php",
+                {"session_id": self._session_id, "aIndex": a_index},
+            )
+        )
 
-        return await self._api_post_json("AppContoareSetIndexes.php", payload)
+    async def _with_relogin(self, call) -> dict[str, Any]:
+        """Execută o scriere; dacă sesiunea a expirat (nologin), re-login și o reia o dată.
+
+        `call` construiește cererea la fiecare apel, deci reluarea folosește
+        session_id-ul nou.
+        """
+        result = await call()
+        if result.get("result") == "nologin":
+            _LOGGER.info("[Ebloc:API] Sesiune expirată la scriere — re-login și reîncerc")
+            if await self.async_login():
+                result = await call()
+        return result
 
     # ─── Metode helper ───
 

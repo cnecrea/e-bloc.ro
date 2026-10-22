@@ -274,11 +274,8 @@ class LicentaNecesaraSensor(EblocEntity):
         mgr = self.hass.data.get(DOMAIN, {}).get(LICENSE_DATA_KEY)
         if mgr is None:
             return "Licență necesară"
-        status = mgr.status
-        if status == "trial":
-            return f"Evaluare ({mgr.trial_days_remaining} zile)"
-        if status == "expired":
-            return "Licență expirată"
+        if mgr.status == "expired":
+            return "Licență expirată" if mgr.has_license else "Evaluare expirată"
         return "Licență necesară"
 
     @property

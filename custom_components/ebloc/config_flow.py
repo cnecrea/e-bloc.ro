@@ -28,6 +28,7 @@ from .const import (
     DOMAIN,
     LICENSE_DATA_KEY,
     LICENSE_PURCHASE_URL,
+    MAX_UPDATE_INTERVAL,
     MIN_UPDATE_INTERVAL,
 )
 from .api import EblocApiClient
@@ -38,6 +39,15 @@ _LOGGER = logging.getLogger(__name__)
 # ------------------------------------------------------------------
 # ConfigFlow
 # ------------------------------------------------------------------
+
+
+# Tipurile de licență emise de WebAPI (LICENSE_DURATION)
+_LICENSE_TYPE_RO = {
+    "perpetual": "perpetuă",
+    "annual": "anuală",
+    "semi_annual": "semestrială",
+    "monthly": "lunară",
+}
 
 
 class EblocConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -118,7 +128,7 @@ class EblocConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Optional(
                     CONF_UPDATE_INTERVAL,
                     default=DEFAULT_UPDATE_INTERVAL,
-                ): vol.All(int, vol.Range(min=MIN_UPDATE_INTERVAL)),
+                ): vol.All(int, vol.Range(min=MIN_UPDATE_INTERVAL, max=MAX_UPDATE_INTERVAL)),
             }
         )
 
@@ -174,7 +184,7 @@ class EblocOptionsFlow(config_entries.OptionsFlow):
         if server_status == "licensed":
             from datetime import datetime
 
-            tip = mgr.license_type or "necunoscut"
+            tip = _LICENSE_TYPE_RO.get(mgr.license_type or "", mgr.license_type or "necunoscut")
             status_lines = [f"✅ Licență activă ({tip})"]
 
             if mgr.license_key_masked:
@@ -253,14 +263,8 @@ class EblocOptionsFlow(config_entries.OptionsFlow):
                 if result.get("success"):
                     from homeassistant.components import persistent_notification
 
-                    _LICENSE_TYPE_RO = {
-                        "monthly": "lunară",
-                        "yearly": "anuală",
-                        "perpetual": "perpetuă",
-                        "trial": "evaluare",
-                    }
                     tip_ro = _LICENSE_TYPE_RO.get(
-                        mgr.license_type, mgr.license_type or "necunoscut"
+                        mgr.license_type or "", mgr.license_type or "necunoscut"
                     )
 
                     persistent_notification.async_create(
@@ -275,14 +279,16 @@ class EblocOptionsFlow(config_entries.OptionsFlow):
                     )
 
                 api_error = result.get("error", "unknown_error")
+                # Codurile WebAPI /activate + erorile locale ale clientului
                 error_map = {
                     "invalid_key": "license_key_invalid",
                     "already_used": "license_already_used",
                     "expired_key": "license_key_expired",
                     "fingerprint_mismatch": "license_fingerprint_mismatch",
-                    "invalid_signature": "license_server_error",
                     "network_error": "license_network_error",
-                    "server_error": "license_server_error",
+                    "http_502": "license_network_error",
+                    "http_503": "license_network_error",
+                    "http_504": "license_network_error",
                 }
                 errors["base"] = error_map.get(api_error, "license_server_error")
 
@@ -317,7 +323,13 @@ class EblocOptionsFlow(config_entries.OptionsFlow):
             session = async_get_clientsession(self.hass)
             api = EblocApiClient(session, email, password)
 
-            if await api.async_login():
+            conflict = any(
+                e.entry_id != self.config_entry.entry_id and e.unique_id == email.lower()
+                for e in self.hass.config_entries.async_entries(DOMAIN)
+            )
+            if conflict:
+                errors["base"] = "already_configured"
+            elif await api.async_login():
                 if await api.async_autodiscover():
                     update_interval = user_input.get(
                         CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL
@@ -339,13 +351,15 @@ class EblocOptionsFlow(config_entries.OptionsFlow):
                         str(k): v for k, v in api.home_ap_data.items()
                     }
 
+                    # Listener-ul de update reîncarcă intrarea o singură dată
+                    # (înainte: update + reload explicit + create_entry = 3 reload-uri).
                     self.hass.config_entries.async_update_entry(
-                        self.config_entry, data=new_data
+                        self.config_entry,
+                        data=new_data,
+                        title=f"E-bloc ({email})",
+                        unique_id=email.lower(),
                     )
-                    await self.hass.config_entries.async_reload(
-                        self.config_entry.entry_id
-                    )
-                    return self.async_create_entry(data={})
+                    return self.async_create_entry(data=dict(self.config_entry.options))
                 else:
                     errors["base"] = "autodiscover_failed"
             else:
@@ -364,7 +378,7 @@ class EblocOptionsFlow(config_entries.OptionsFlow):
                 vol.Optional(
                     CONF_UPDATE_INTERVAL,
                     default=current.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL),
-                ): vol.All(int, vol.Range(min=MIN_UPDATE_INTERVAL)),
+                ): vol.All(int, vol.Range(min=MIN_UPDATE_INTERVAL, max=MAX_UPDATE_INTERVAL)),
             }
         )
 

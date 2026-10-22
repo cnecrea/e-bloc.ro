@@ -64,7 +64,8 @@
       "license_key_expired": "Cheia de licență a expirat.",
       "license_fingerprint_mismatch": "Cheia nu corespunde acestui dispozitiv.",
       "license_network_error": "Eroare de rețea la verificarea licenței.",
-      "license_server_error": "Eroare server la verificarea licenței."
+      "license_server_error": "Eroare server la verificarea licenței.",
+      "already_configured": "Acest cont e-bloc este deja configurat."
     }
   }
 }
