@@ -1,11 +1,13 @@
 """Inițializarea integrării E-bloc România."""
 
 import json
+import asyncio
 import logging
 from dataclasses import dataclass
 
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers import config_validation as cv
@@ -182,6 +184,24 @@ def _schedule_license_check(hass: HomeAssistant, mgr: LicenseManager) -> None:
     domain_data["_cancel_license_check"] = async_call_later(hass, delay, _on_timer)
 
 
+async def _async_wait_license_loaded(hass: HomeAssistant) -> None:
+    """Așteaptă încărcarea managerului de licențe pornită de altă intrare.
+
+    La pornirea HA intrările aceluiași domeniu se configurează în paralel. Fără
+    această așteptare, a doua intrare găsea managerul încă neîncărcat (licență
+    „invalidă") → fără date, doar „Licență necesară" și senzorii reali scoși din
+    registry, până la un reload manual (issue reteleelectrice#15).
+    """
+    load = hass.data.get(DOMAIN, {}).get("_license_load")
+    if load is not None and not load.done():
+        try:
+            await asyncio.shield(load)
+        except Exception as err:
+            raise ConfigEntryNotReady("Managerul de licențe nu s-a putut încărca") from err
+    if LICENSE_DATA_KEY not in hass.data.get(DOMAIN, {}):
+        raise ConfigEntryNotReady("Managerul de licențe nu s-a putut încărca")
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     """Configurează integrarea pentru o anumită intrare (config entry)."""
     _LOGGER.info(
@@ -197,10 +217,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         # Referința se setează ÎNAINTE de async_load(): async_load() face await HTTP,
         # iar intrările configurate în paralel nu trebuie să creeze manageri duplicați.
         hass.data[DOMAIN][LICENSE_DATA_KEY] = license_mgr
+        # Încărcarea e un task comun: intrările configurate în paralel o așteaptă
+        # (vezi _async_wait_license_loaded) în loc să folosească managerul neîncărcat.
+        load = hass.async_create_task(license_mgr.async_load(), f"{DOMAIN} license load")
+        hass.data[DOMAIN]["_license_load"] = load
         try:
-            await license_mgr.async_load()
+            await load
         except Exception:
             hass.data[DOMAIN].pop(LICENSE_DATA_KEY, None)
+            hass.data[DOMAIN].pop("_license_load", None)
             raise
         _LOGGER.debug(
             "[Ebloc] LicenseManager: status=%s, valid=%s, fingerprint=%s...",
@@ -213,6 +238,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         # Notificare re-enable
         if hass.data.pop(f"{DOMAIN}_was_disabled", False):
             await license_mgr.async_notify_event("integration_enabled")
+    else:
+        await _async_wait_license_loaded(hass)
 
     license_mgr = hass.data[DOMAIN][LICENSE_DATA_KEY]
     if not license_mgr.is_valid:
