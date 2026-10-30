@@ -6251,22 +6251,54 @@
           "vizite": 2,
           "vizitatori_unici": 1
         }
+      ],
+      "clones_total": 7,
+      "clones_unice": 3,
+      "views_total": 1,
+      "views_unice": 1
+    },
+    "2026-10-30": {
+      "stars": 25,
+      "forks": 6,
+      "watchers": 2,
+      "open_issues": 0,
+      "referrers": [
+        {
+          "sursa": "aocr.org",
+          "vizite": 44,
+          "vizitatori_unici": 44
+        },
+        {
+          "sursa": "github.com",
+          "vizite": 4,
+          "vizitatori_unici": 3
+        },
+        {
+          "sursa": "Google",
+          "vizite": 2,
+          "vizitatori_unici": 1
+        },
+        {
+          "sursa": "hubinteligent.org",
+          "vizite": 2,
+          "vizitatori_unici": 1
+        }
       ]
     }
   },
   "releases": {
-    "1.5.6": 0,
-    "1.5.5": 3,
-    "1.5.4": 2,
-    "1.5.3": 5,
-    "1.5.2": 2,
-    "1.5.1": 2,
-    "1.5.0": 2,
-    "1.4.0": 2,
-    "1.3.0": 2,
-    "1.2.0": 2,
-    "1.1.0": 3,
-    "1.0.0": 3
+    "1.5.6": 2,
+    "1.5.5": 5,
+    "1.5.4": 4,
+    "1.5.3": 7,
+    "1.5.2": 4,
+    "1.5.1": 4,
+    "1.5.0": 4,
+    "1.4.0": 4,
+    "1.3.0": 4,
+    "1.2.0": 4,
+    "1.1.0": 5,
+    "1.0.0": 5
   },
-  "ultima_actualizare": "2026-10-29T12:45:42Z"
+  "ultima_actualizare": "2026-10-30T12:37:24Z"
 }
