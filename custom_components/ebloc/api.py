@@ -415,7 +415,7 @@ class EblocApiClient:
         apartments: dict[Any, list[dict[str, Any]]] = {}
         home: dict[Any, dict[str, Any]] = {}
         luna = ""
-        # (sursă, asociație, motiv) — raportate în blocul de avertisment al actualizării
+        # (sursă, asociație, motiv) — raportate în avertismentul de la finalul actualizării
         self.account_problems = []
 
         for assoc in self._associations:

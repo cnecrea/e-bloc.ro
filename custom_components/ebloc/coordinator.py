@@ -165,7 +165,9 @@ class EblocCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "durata_s": round(durata, 2),
                 "solicitari_api": {k: stats[k] for k in ("total", "ok", "respinse", "esuate")},
                 "asociatii": report,
-                "probleme": [f"{SOURCE_LABELS.get(s, s)} | {w}: {m}" for s, w, m, _ in self._failures],
+                "probleme": [
+                    f"{SOURCE_LABELS.get(s, s)} ({w.replace(' | ', ', ')}): {m}" for s, w, m, _ in self._failures
+                ],
             }
 
             self._log_summary(nr, len(per_apartment), durata)
