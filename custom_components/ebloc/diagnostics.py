@@ -16,7 +16,7 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
-from .const import DOMAIN, LICENSE_DATA_KEY
+from .const import APP_VERSION, DOMAIN, LICENSE_DATA_KEY, OS_VERSION
 from .helpers import mascheaza_email
 
 
@@ -48,6 +48,8 @@ async def async_get_config_entry_diagnostics(
         coordinator_info = {
             "last_update_success": coordinator.last_update_success,
             "update_interval": str(coordinator.update_interval),
+            "versiune_aplicatie_trimisa": APP_VERSION,
+            "versiune_android_trimisa": OS_VERSION,
         }
         data = coordinator.data or {}
         coordinator_info["associations_count"] = len(data.get("associations", []))
@@ -57,6 +59,11 @@ async def async_get_config_entry_diagnostics(
         coordinator_info["per_apartment_keys"] = list(
             data.get("per_apartment", {}).keys()
         )
+        coordinator_info["luna"] = data.get("luna", "")
+        # Paginile permise pe fiecare asociație (aAccesPage* din AppGetInfo)
+        coordinator_info["acces_pe_asociatie"] = data.get("access_by_asoc", {})
+        # Ce s-a citit la ultima actualizare: surse ok / din actualizarea anterioară / indisponibile
+        coordinator_info["ultima_actualizare"] = getattr(coordinator, "last_report", {})
 
     # ── Senzori activi ──
     senzori_activi = sorted(

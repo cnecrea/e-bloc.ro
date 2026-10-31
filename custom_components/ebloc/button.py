@@ -11,21 +11,27 @@ Butoane:
 
 Lookup-ul number entity se face prin entity_registry (unique_id),
 NU prin construirea manuală a entity_id-ului.
+
+Rezultatul fiecărei trimiteri (reușită sau nu, cu motivul) apare ca notificare permanentă
+în bara laterală; o trimitere nouă pentru același contor / apartament o înlocuiește.
 """
 
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from typing import Any
 
+from homeassistant.components import persistent_notification
 from homeassistant.components.button import ButtonEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
-from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.util import dt as dt_util
 from homeassistant.util import slugify as ha_slugify
 
 from .const import (
@@ -34,10 +40,19 @@ from .const import (
     LICENSE_DATA_KEY,
     NR_PERS_MULTIPLIER,
 )
+from .api import describe_result
 from .coordinator import EblocCoordinator
-from .helpers import is_license_valid
+from .helpers import association_device, contor_suffix, index_for, is_license_valid, luna_ro
 
 _LOGGER = logging.getLogger(__name__)
+
+
+class EblocActionError(HomeAssistantError):
+    """Trimitere eșuată; motivul e păstrat separat pentru notificare."""
+
+    def __init__(self, message: str, reason: str) -> None:
+        super().__init__(message)
+        self.reason = reason
 
 
 # ──────────────────────────────────────────────
@@ -66,15 +81,8 @@ class EblocButton(CoordinatorEntity[EblocCoordinator], ButtonEntity):
 
     @property
     def device_info(self) -> DeviceInfo:
-        """Informații dispozitiv — subclasele fac override cu id_asoc."""
-        id_asoc = getattr(self, "_id_asoc", self._id_user)
-        return DeviceInfo(
-            identifiers={(DOMAIN, f"{self._id_user}_{id_asoc}")},
-            name=f"E-bloc România ({id_asoc})",
-            manufacturer="Ciprian Nicolae (cnecrea)",
-            model="E-bloc România",
-            entry_type=DeviceEntryType.SERVICE,
-        )
+        """Dispozitivul asociației."""
+        return association_device(self._id_user, getattr(self, "_id_asoc", self._id_user))
 
     @property
     def available(self) -> bool:
@@ -89,7 +97,7 @@ class EblocButton(CoordinatorEntity[EblocCoordinator], ButtonEntity):
         registry = er.async_get(self.hass)
         return registry.async_get_entity_id("number", DOMAIN, number_unique_id)
 
-    def _read_number_value(self, number_unique_id: str) -> float:
+    def _read_number_value(self, number_unique_id: str, label: str) -> float:
         """Valoarea curentă a selectorului (number) asociat butonului.
 
         Ridică HomeAssistantError — utilizatorul vede eroarea în interfață,
@@ -98,22 +106,63 @@ class EblocButton(CoordinatorEntity[EblocCoordinator], ButtonEntity):
         entity_id = self._find_number_entity_id(number_unique_id)
         state = self.hass.states.get(entity_id) if entity_id else None
         if state is None or state.state in ("unknown", "unavailable"):
-            raise HomeAssistantError(
-                f"Selectorul asociat ({entity_id or number_unique_id}) nu este disponibil."
-            )
-        try:
-            return float(state.state)
-        except (ValueError, TypeError) as err:
-            raise HomeAssistantError(
-                f"Valoare invalidă în {entity_id}: '{state.state}'."
-            ) from err
+            # Numele afișat, nu entity_id-ul (acesta conține ID-ul utilizatorului)
+            motiv = f"selectorul „{label}” nu are o valoare"
+        else:
+            try:
+                return float(state.state)
+            except (ValueError, TypeError):
+                motiv = f"valoarea „{state.state}” din selectorul „{label}” nu este un număr"
+        _LOGGER.warning("Trimitere oprită | %s | %s", self._where(), motiv)
+        raise EblocActionError(f"Trimiterea nu a pornit: {motiv}.", motiv)
 
-    @staticmethod
-    def _raise_if_failed(result: dict[str, Any], ce: str) -> None:
-        """Răspunsul e-bloc.ro: orice altceva decât result=ok e o eroare vizibilă."""
-        if result.get("result") != "ok":
-            detaliu = result.get("message") or result.get("error") or result.get("result") or "necunoscut"
-            raise HomeAssistantError(f"e-bloc.ro a refuzat {ce}: {detaliu}")
+    def _raise_if_failed(self, result: dict[str, Any], ce: str) -> None:
+        """Orice răspuns în afară de result=ok devine o eroare vizibilă în interfață și în log."""
+        if result.get("result") == "ok":
+            return
+        if result.get("result") == "readonly":
+            motiv = "perioada pentru această lună este închisă"
+        else:
+            motiv = describe_result(result)
+        _LOGGER.warning(
+            "Trimitere refuzată | %s | %s | rezultat: %s | %s",
+            self._where(), ce, result.get("result", "fără rezultat"), motiv,
+        )
+        raise EblocActionError(f"e-bloc.ro nu a acceptat {ce}: {motiv}.", motiv)
+
+    def _ap_number(self) -> Any:
+        """Numărul apartamentului (câmpul „ap"), altfel id_ap."""
+        id_asoc = getattr(self, "_id_asoc", "")
+        id_ap = getattr(self, "_id_ap", "")
+        apartments = (self.coordinator.data or {}).get("apartments", {})
+        return next(
+            (
+                a.get("ap") for a in apartments.get(id_asoc, apartments.get(str(id_asoc), []))
+                if str(a.get("id_ap", a.get("id"))) == str(id_ap)
+            ),
+            None,
+        ) or id_ap
+
+    def _where(self) -> str:
+        return f"asociația {getattr(self, '_id_asoc', '')} | apartamentul {self._ap_number()}"
+
+    def _notify(self, notification_id: str, titlu: str, text: str, motiv: str | None = None) -> None:
+        """Notificare permanentă cu rezultatul trimiterii (înlocuiește rezultatul anterior)."""
+        api = self.coordinator.api_client
+        id_asoc = getattr(self, "_id_asoc", "")
+        nr_ap = self._ap_number()
+        mesaj = [text]
+        if motiv:
+            mesaj.append(f"**Motiv:** {motiv[0].upper() + motiv[1:]}.")
+        mesaj.append(
+            f"- Asociația: {api.association_name(id_asoc)} ({id_asoc})\n"
+            f"- Apartamentul: {nr_ap}\n"
+            f"- {'Încercare' if motiv else 'Trimis'}: {dt_util.now().strftime('%d.%m.%Y, %H:%M')}"
+        )
+        persistent_notification.async_create(
+            self.hass, "\n\n".join(mesaj), title=f"E-bloc România — {titlu}",
+            notification_id=notification_id,
+        )
 
 
 # ──────────────────────────────────────────────
@@ -132,7 +181,7 @@ async def async_setup_entry(
         for entry_reg in er.async_entries_for_config_entry(registru, entry.entry_id):
             if entry_reg.domain == "button":
                 registru.async_remove(entry_reg.entity_id)
-        _LOGGER.debug("[Ebloc:Button] Licență invalidă — skip platform button")
+        _LOGGER.debug("Platformă neîncărcată | butoane | licența nu este validă")
         return
 
     runtime = entry.runtime_data
@@ -161,36 +210,25 @@ async def async_setup_entry(
                 )
             )
 
-            # Butoane trimite index per contor
+            # Butoane trimite index — doar contoarele editabile ale acestui apartament
             ap_data = data.get("per_apartment", {}).get(ap_key, {})
             contoare_data = ap_data.get("contoare", {})
-            contoare_def = contoare_data.get("aInfoContoare", [])
-            contoare_idx = contoare_data.get("aInfoIndex", [])
+            suffix = contor_suffix(data, id_asoc, id_ap)
 
-            idx_by_contor: dict[str, dict[str, Any]] = {}
-            for idx_item in contoare_idx:
-                cid = str(idx_item.get("id_contor", ""))
-                if cid:
-                    idx_by_contor[cid] = idx_item
-
-            for cd in contoare_def:
+            for cd in contoare_data.get("aInfoContoare", []):
                 id_contor = str(cd.get("id_contor", ""))
                 if not id_contor:
                     continue
-                contor_val = idx_by_contor.get(id_contor, {})
-                right_edit = str(contor_val.get("right_edit_index", "0"))
-                if right_edit == "1":
+                contor_val = index_for(contoare_data, id_contor, id_ap) or {}
+                if str(contor_val.get("right_edit_index", "0")) == "1":
                     entities.append(
                         TrimiteIndexButton(
                             coordinator, id_user, id_asoc_int, id_ap,
-                            int(id_contor), cd,
+                            int(id_contor), cd, suffix,
                         )
                     )
 
-    _LOGGER.info(
-        "[Ebloc:Button] Creez %d butoane pentru user %s",
-        len(entities), id_user,
-    )
+    _LOGGER.debug("Platformă încărcată | butoane: %d", len(entities))
     async_add_entities(entities, update_before_add=True)
 
 
@@ -205,7 +243,7 @@ class TrimiteIndexButton(EblocButton):
     def __init__(
         self, coordinator: EblocCoordinator, id_user: int,
         id_asoc: int, id_ap: int | str,
-        id_contor: int, contor_def: dict[str, Any],
+        id_contor: int, contor_def: dict[str, Any], suffix: str = "",
     ) -> None:
         super().__init__(coordinator, id_user)
         self._id_asoc = id_asoc
@@ -214,44 +252,51 @@ class TrimiteIndexButton(EblocButton):
 
         titlu = contor_def.get("titlu", f"Contor {id_contor}")
         titlu_slug = ha_slugify(titlu)
+        self._titlu = titlu
         self._attr_name = f"Trimite index {titlu}"
-        self._attr_unique_id = f"{DOMAIN}_{id_user}_{id_asoc}_{id_contor}_trimite_index"
-        self._custom_entity_id = f"button.{DOMAIN}_{id_user}_{id_asoc}_trimite_index_{titlu_slug}"
+        self._attr_unique_id = f"{DOMAIN}_{id_user}_{id_asoc}_{id_contor}{suffix}_trimite_index"
+        self._custom_entity_id = f"button.{DOMAIN}_{id_user}_{id_asoc}_trimite_index_{titlu_slug}{suffix}"
 
-        # unique_id al number entity corespunzător
-        self._number_uid = f"{DOMAIN}_{id_user}_{id_asoc}_{id_contor}_index"
-
-    @property
-    def device_info(self) -> DeviceInfo:
-        return DeviceInfo(
-            identifiers={(DOMAIN, f"{self._id_user}_{self._id_asoc}")},
-            name=f"E-bloc România ({self._id_asoc})",
-            manufacturer="Ciprian Nicolae (cnecrea)",
-            model="E-bloc România",
-            entry_type=DeviceEntryType.SERVICE,
-        )
+        # unique_id al number entity corespunzător (același sufix ca în number.py)
+        self._number_uid = f"{DOMAIN}_{id_user}_{id_asoc}_{id_contor}{suffix}_index"
 
     async def async_press(self) -> None:
-        """Trimite indexul din number helper."""
-        index_value = self._read_number_value(self._number_uid)
-        # round(): float("1.005") * 1000 = 1004.999… → int() ar trimite 1004 (index greșit)
-        index_api = int(round(index_value * NR_PERS_MULTIPLIER))
-        _LOGGER.info(
-            "[Ebloc:Button] Trimit index: contor=%s, val=%.3f m³ (API=%d), asoc=%s, ap=%s",
-            self._id_contor, index_value, index_api, self._id_asoc, self._id_ap,
+        """Trimite indexul din number helper; rezultatul apare ca notificare."""
+        notification_id = f"{DOMAIN}_index_{self._id_asoc}_{self._id_ap}_{self._id_contor}"
+        valoare = ""
+        try:
+            index_value = self._read_number_value(self._number_uid, f"Index {self._titlu} (selector)")
+            valoare = f"{_ro(index_value)} m³"
+            # round(): float("1.005") * 1000 = 1004.999… → int() ar trimite 1004 (index greșit)
+            index_api = int(round(index_value * NR_PERS_MULTIPLIER))
+            _LOGGER.debug(
+                "Trimitere index | %s | contorul „%s” | %s", self._where(), self._titlu, valoare
+            )
+            result = await self.coordinator.api_client.async_set_index_contoare(
+                [
+                    {
+                        "id_asoc": self._id_asoc,
+                        "id_ap": self._id_ap,
+                        "id_contor": self._id_contor,
+                        "index_nou": index_api,
+                    }
+                ]
+            )
+            self._raise_if_failed(result, f"indexul pentru contorul „{self._titlu}”")
+        except EblocActionError as err:
+            self._notify(
+                notification_id, "Index netrimis",
+                f"Indexul{f' **{valoare}**' if valoare else ''} pentru contorul "
+                f"**{self._titlu}** nu a fost trimis.",
+                err.reason,
+            )
+            raise
+
+        self._notify(
+            notification_id, "Index trimis",
+            f"Indexul **{valoare}** pentru contorul **{self._titlu}** a fost trimis cu succes.",
         )
-        result = await self.coordinator.api_client.async_set_index_contoare(
-            [
-                {
-                    "id_asoc": self._id_asoc,
-                    "id_ap": self._id_ap,
-                    "id_contor": self._id_contor,
-                    "index_nou": index_api,
-                }
-            ]
-        )
-        self._raise_if_failed(result, "indexul")
-        _LOGGER.info("[Ebloc:Button] Index trimis: contor=%s, val=%d", self._id_contor, index_api)
+        _LOGGER.info("Index trimis | %s | contorul „%s” | %s", self._where(), self._titlu, valoare)
         await self.coordinator.async_request_refresh()
 
 
@@ -278,35 +323,46 @@ class TrimiteNrPersButton(EblocButton):
         # unique_id al number entity corespunzător
         self._number_uid = f"{DOMAIN}_{id_user}_{id_asoc}_{id_ap}_nr_pers"
 
-    @property
-    def device_info(self) -> DeviceInfo:
-        return DeviceInfo(
-            identifiers={(DOMAIN, f"{self._id_user}_{self._id_asoc}")},
-            name=f"E-bloc România ({self._id_asoc})",
-            manufacturer="Ciprian Nicolae (cnecrea)",
-            model="E-bloc România",
-            entry_type=DeviceEntryType.SERVICE,
-        )
-
     async def async_press(self) -> None:
-        """Trimite nr. persoane din number helper."""
-        nr_pers = int(round(self._read_number_value(self._number_uid)))
+        """Trimite nr. persoane din number helper; rezultatul apare ca notificare."""
+        notification_id = f"{DOMAIN}_nr_persoane_{self._id_asoc}_{self._id_ap}"
 
         # Luna curentă — calculată la apăsare; API-ul refuză lunile închise
-        from datetime import datetime as _dt  # noqa: C0415
-        luna_curenta = _dt.now().strftime("%Y-%m")
+        luna_curenta = datetime.now().strftime("%Y-%m")
         luna = (self.coordinator.data or {}).get("luna", "") or luna_curenta
         if luna < luna_curenta:
             luna = luna_curenta
+        luna_text = luna_ro(luna)
 
+        nr_pers: int | None = None
+        try:
+            nr_pers = int(round(self._read_number_value(self._number_uid, "Nr. persoane")))
+            _LOGGER.debug(
+                "Trimitere număr persoane | %s | luna %s | persoane: %d", self._where(), luna_text, nr_pers
+            )
+            result = await self.coordinator.api_client.async_set_nr_persoane(
+                self._id_asoc, self._id_ap, luna, nr_pers
+            )
+            self._raise_if_failed(result, f"numărul de persoane pentru {luna_text}")
+        except EblocActionError as err:
+            self._notify(
+                notification_id, "Număr de persoane netrimis",
+                f"Numărul de persoane{f' (**{nr_pers}**)' if nr_pers is not None else ''} "
+                f"pentru **{luna_text}** nu a fost trimis.",
+                err.reason,
+            )
+            raise
+
+        self._notify(
+            notification_id, "Număr de persoane trimis",
+            f"Numărul de persoane (**{nr_pers}**) pentru **{luna_text}** a fost trimis cu succes.",
+        )
         _LOGGER.info(
-            "[Ebloc:Button] Trimit nr. persoane: asoc=%s, ap=%s, luna=%s, nr=%d",
-            self._id_asoc, self._id_ap, luna, nr_pers,
+            "Număr persoane trimis | %s | luna %s | persoane: %d", self._where(), luna_text, nr_pers
         )
-        result = await self.coordinator.api_client.async_set_nr_persoane(
-            self._id_asoc, self._id_ap, luna, nr_pers
-        )
-        self._raise_if_failed(result, "numărul de persoane")
-        _LOGGER.info("[Ebloc:Button] Nr. persoane trimis: asoc=%s, ap=%s, nr=%d",
-                     self._id_asoc, self._id_ap, nr_pers)
         await self.coordinator.async_request_refresh()
+
+
+def _ro(value: float) -> str:
+    """Număr cu 3 zecimale și virgulă, ca în română: 409,000."""
+    return f"{value:.3f}".replace(".", ",")

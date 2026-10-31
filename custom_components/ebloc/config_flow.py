@@ -113,11 +113,11 @@ class EblocConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     else:
                         errors["base"] = "no_apartments"
                         _LOGGER.warning(
-                            "[Ebloc:ConfigFlow] Login OK dar niciun apartament descoperit"
+                            "Autentificarea a reușit, dar contul nu are niciun apartament disponibil."
                         )
                 else:
+                    # Motivul e deja în log (api.async_autodiscover)
                     errors["base"] = "autodiscover_failed"
-                    _LOGGER.warning("[Ebloc:ConfigFlow] Autodiscovery eșuat")
             else:
                 errors["base"] = "auth_failed"
 

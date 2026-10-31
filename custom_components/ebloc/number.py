@@ -27,7 +27,7 @@ from homeassistant.components.number import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
-from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import slugify as ha_slugify
@@ -41,7 +41,7 @@ from .const import (
     NR_PERS_MULTIPLIER,
 )
 from .coordinator import EblocCoordinator
-from .helpers import is_license_valid
+from .helpers import association_device, contor_suffix, index_for, is_license_valid
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -72,15 +72,8 @@ class EblocNumber(CoordinatorEntity[EblocCoordinator], NumberEntity):
 
     @property
     def device_info(self) -> DeviceInfo:
-        """Informații dispozitiv — subclasele fac override cu id_asoc."""
-        id_asoc = getattr(self, "_id_asoc", self._id_user)
-        return DeviceInfo(
-            identifiers={(DOMAIN, f"{self._id_user}_{id_asoc}")},
-            name=f"E-bloc România ({id_asoc})",
-            manufacturer="Ciprian Nicolae (cnecrea)",
-            model="E-bloc România",
-            entry_type=DeviceEntryType.SERVICE,
-        )
+        """Dispozitivul asociației."""
+        return association_device(self._id_user, getattr(self, "_id_asoc", self._id_user))
 
     @property
     def available(self) -> bool:
@@ -107,7 +100,7 @@ async def async_setup_entry(
         for entry_reg in er.async_entries_for_config_entry(registru, entry.entry_id):
             if entry_reg.domain == "number":
                 registru.async_remove(entry_reg.entity_id)
-        _LOGGER.debug("[Ebloc:Number] Licență invalidă — skip platform number")
+        _LOGGER.debug("Platformă neîncărcată | selectoare | licența nu este validă")
         return
 
     runtime = entry.runtime_data
@@ -133,36 +126,25 @@ async def async_setup_entry(
                 NrPersoaneNumber(coordinator, id_user, id_asoc_int, id_ap, ap)
             )
 
-            # Number helpers per contor
+            # Number helpers per contor — doar contoarele editabile ale acestui apartament
             ap_data = data.get("per_apartment", {}).get(ap_key, {})
             contoare_data = ap_data.get("contoare", {})
-            contoare_def = contoare_data.get("aInfoContoare", [])
-            contoare_idx = contoare_data.get("aInfoIndex", [])
+            suffix = contor_suffix(data, id_asoc, id_ap)
 
-            idx_by_contor: dict[str, dict[str, Any]] = {}
-            for idx_item in contoare_idx:
-                cid = str(idx_item.get("id_contor", ""))
-                if cid:
-                    idx_by_contor[cid] = idx_item
-
-            for cd in contoare_def:
+            for cd in contoare_data.get("aInfoContoare", []):
                 id_contor = str(cd.get("id_contor", ""))
                 if not id_contor:
                     continue
-                contor_val = idx_by_contor.get(id_contor, {})
-                right_edit = str(contor_val.get("right_edit_index", "0"))
-                if right_edit == "1":
+                contor_val = index_for(contoare_data, id_contor, id_ap) or {}
+                if str(contor_val.get("right_edit_index", "0")) == "1":
                     entities.append(
                         IndexContorNumber(
                             coordinator, id_user, id_asoc_int, id_ap,
-                            int(id_contor), cd, contor_val,
+                            int(id_contor), cd, contor_val, suffix,
                         )
                     )
 
-    _LOGGER.info(
-        "[Ebloc:Number] Creez %d number entities pentru user %s",
-        len(entities), id_user,
-    )
+    _LOGGER.debug("Platformă încărcată | selectoare: %d", len(entities))
     async_add_entities(entities, update_before_add=True)
 
 
@@ -200,16 +182,6 @@ class NrPersoaneNumber(EblocNumber):
                 self._value = 0
 
     @property
-    def device_info(self) -> DeviceInfo:
-        return DeviceInfo(
-            identifiers={(DOMAIN, f"{self._id_user}_{self._id_asoc}")},
-            name=f"E-bloc România ({self._id_asoc})",
-            manufacturer="Ciprian Nicolae (cnecrea)",
-            model="E-bloc România",
-            entry_type=DeviceEntryType.SERVICE,
-        )
-
-    @property
     def native_value(self) -> float:
         """Valoare locală — NU din API."""
         return self._value
@@ -237,7 +209,7 @@ class IndexContorNumber(EblocNumber):
         self, coordinator: EblocCoordinator, id_user: int,
         id_asoc: int, id_ap: int | str,
         id_contor: int, contor_def: dict[str, Any],
-        contor_val: dict[str, Any],
+        contor_val: dict[str, Any], suffix: str = "",
     ) -> None:
         super().__init__(coordinator, id_user)
         self._id_asoc = id_asoc
@@ -248,8 +220,9 @@ class IndexContorNumber(EblocNumber):
         titlu_slug = ha_slugify(titlu)
 
         self._attr_name = f"Index {titlu} (selector)"
-        self._attr_unique_id = f"{DOMAIN}_{id_user}_{id_asoc}_{id_contor}_index"
-        self._custom_entity_id = f"number.{DOMAIN}_{id_user}_{id_asoc}_index_{titlu_slug}_selector"
+        # Același sufix ca în button.py, care caută acest selector după unique_id
+        self._attr_unique_id = f"{DOMAIN}_{id_user}_{id_asoc}_{id_contor}{suffix}_index"
+        self._custom_entity_id = f"number.{DOMAIN}_{id_user}_{id_asoc}_index_{titlu_slug}{suffix}_selector"
 
         # Fallback: ultimul index disponibil (index_nou > index_vechi > 0)
         # Dacă se apasă butonul din greșeală, retrimite ultimul index valid
@@ -271,16 +244,6 @@ class IndexContorNumber(EblocNumber):
 
         if fallback != INDEX_NOT_SET:
             self._value = round(fallback / NR_PERS_MULTIPLIER, 3)
-
-    @property
-    def device_info(self) -> DeviceInfo:
-        return DeviceInfo(
-            identifiers={(DOMAIN, f"{self._id_user}_{self._id_asoc}")},
-            name=f"E-bloc România ({self._id_asoc})",
-            manufacturer="Ciprian Nicolae (cnecrea)",
-            model="E-bloc România",
-            entry_type=DeviceEntryType.SERVICE,
-        )
 
     @property
     def native_value(self) -> float:

@@ -28,6 +28,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.storage import Store
 
 from .const import DOMAIN
+from .logfmt import short_id
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -149,8 +150,8 @@ class LicenseManager:
             self._data = dict(stored) if stored else {}
         except Exception:  # noqa: BLE001
             _LOGGER.warning(
-                "[Ebloc:License] Storage corupt sau ilizibil "
-                "— pornesc cu date goale (serverul va restaura starea)"
+                "Datele de licență salvate nu au putut fi citite; se pornește fără ele, "
+                "iar serverul de licențe restaurează starea."
             )
             self._data = {}
 
@@ -164,9 +165,9 @@ class LicenseManager:
             self._read_manifest_version
         )
         _LOGGER.debug(
-            "[Ebloc:License] Fingerprint: %s... (hw: %s...)",
-            self._fingerprint[:16],
-            self._hardware_fingerprint[:16],
+            "Identificare dispozitiv | fingerprint: %s | hardware: %s",
+            short_id(self._fingerprint),
+            short_id(self._hardware_fingerprint),
         )
 
         # Restaurează status token din cache — doar dacă aparține ACESTUI dispozitiv
@@ -177,14 +178,14 @@ class LicenseManager:
         if cached and self._token_matches(cached):
             self._status_token = cached
             _LOGGER.debug(
-                "[Ebloc:License] Cache restaurat: status=%s, valid=%s",
+                "Starea licenței restaurată din cache | stare: %s | cache valid: %s",
                 cached.get("status"),
-                self._is_status_cache_valid(),
+                "da" if self._is_status_cache_valid() else "nu",
             )
         elif cached:
             _LOGGER.info(
-                "[Ebloc:License] Cache de status ignorat — aparține altui "
-                "dispozitiv/integrări (fingerprint diferit)"
+                "Starea licenței din cache a fost ignorată: aparține altui dispozitiv "
+                "sau altei integrări."
             )
             self._data.pop("status_token", None)
 
@@ -192,7 +193,7 @@ class LicenseManager:
             # Pornirea Home Assistant NU așteaptă serverul de licențe când există o
             # stare locală utilizabilă (cache valid sau perioadă de grație):
             # verificarea se face în fundal, de timer-ul din __init__.py.
-            _LOGGER.debug("[Ebloc:License] Stare locală utilizabilă — verificare în fundal")
+            _LOGGER.debug("Starea locală a licenței este utilizabilă; verificarea la server se face în fundal.")
         else:
             # Prima pornire / grație depășită: statusul e necesar acum, dar cu
             # timeout scurt (un server căzut nu ține pornirea 30s).
@@ -201,24 +202,21 @@ class LicenseManager:
 
         final_status = self.status
         if final_status == "licensed":
-            _LOGGER.info(
-                "[Ebloc:License] ✓ Licență ACTIVĂ (cheie: %s)",
-                self.license_key_masked or "?",
-            )
+            _LOGGER.debug("Licență: activă | validă | cheie %s", self.license_key_masked or "-")
         elif final_status == "trial":
-            _LOGGER.info(
-                "[Ebloc:License] ⏳ Perioadă de evaluare: %d zile rămase",
-                self.trial_days_remaining,
+            zile = self.trial_days_remaining
+            _LOGGER.debug(
+                "Licență: evaluare | validă | %s",
+                "1 zi rămasă" if zile == 1 else f"{zile} {'de ' if zile % 100 >= 20 else ''}zile rămase",
             )
         elif final_status == "expired":
             _LOGGER.warning(
-                "[Ebloc:License] ✗ EXPIRAT — perioada de evaluare "
-                "sau licența a expirat. Senzorii nu vor funcționa."
+                "Licență: expirată | nevalidă | senzorii, butoanele și selectoarele sunt dezactivate"
             )
         else:
             _LOGGER.warning(
-                "[Ebloc:License] ✗ FĂRĂ LICENȚĂ (status=%s) — "
-                "senzorii nu vor funcționa.", final_status
+                "Licență: inexistentă (%s) | nevalidă | senzorii, butoanele și selectoarele "
+                "sunt dezactivate", final_status,
             )
 
     async def _async_save(self) -> None:
@@ -380,8 +378,8 @@ class LicenseManager:
                 and self._data.get("client_secret")
             ):
                 _LOGGER.warning(
-                    "[Ebloc:License] /%s: HMAC invalid — client_secret desincronizat, "
-                    "reîncerc semnat cu fingerprint", endpoint,
+                    "Serverul de licențe | /%s | semnătura HMAC a fost respinsă (secretul clientului "
+                    "este desincronizat); se reîncearcă cu semnătura dispozitivului", endpoint,
                 )
                 self._data.pop("client_secret", None)
                 await self._async_save()
@@ -391,8 +389,11 @@ class LicenseManager:
 
     def _register_failure(self, message: str, *args: Any) -> None:
         self._consecutive_failures += 1
-        _LOGGER.warning(
-            "[Ebloc:License] " + message + " (eșec consecutiv #%d)",
+        # Un singur avertisment la prima cădere; reîncercările următoare doar la DEBUG
+        # (revenirea serverului se anunță în async_check_status).
+        _LOGGER.log(
+            logging.WARNING if self._consecutive_failures == 1 else logging.DEBUG,
+            "Serverul de licențe | " + message + " | eșec consecutiv #%d",
             *args, self._consecutive_failures,
         )
 
@@ -425,26 +426,29 @@ class LicenseManager:
         try:
             http_status, result = await self._async_signed_post("check", payload, timeout)
         except Exception as err:  # noqa: BLE001 — rețea, timeout, DNS
-            self._register_failure("server inaccesibil la /check — %s", err)
+            self._register_failure("/check | serverul nu poate fi contactat: %s", err)
             return self._status_token
 
         if http_status != 200 or "status" not in result:
             if result.get("error") == "invalid_hmac":
                 self._register_failure(
-                    "HMAC invalid la /check — serverul nu recunoaște acest dispozitiv"
+                    "/check | semnătura HMAC a fost respinsă: serverul nu recunoaște acest dispozitiv"
                 )
             else:
                 self._register_failure(
-                    "răspuns invalid de la /check — HTTP %d %s",
+                    "/check | răspuns invalid: HTTP %d %s",
                     http_status, result.get("error") or result.get("detail") or "",
                 )
             return self._status_token
 
         if not self._verify_token_signature(result):
-            self._register_failure("semnătura token-ului de status e invalidă — ignor răspunsul")
+            self._register_failure("/check | semnătura stării de licență este invalidă; răspunsul este ignorat")
             return self._status_token
         if not self._token_matches(result):
-            self._register_failure("token de status pentru alt dispozitiv/integrare — ignor răspunsul")
+            self._register_failure(
+                "/check | starea de licență aparține altui dispozitiv sau altei integrări; "
+                "răspunsul este ignorat"
+            )
             return self._status_token
 
         self._status_token = result
@@ -461,11 +465,17 @@ class LicenseManager:
 
         await self._async_save()
         self._cache_expiry_warned = False
+        if self._consecutive_failures:
+            _LOGGER.info(
+                "Serverul de licențe răspunde din nou (după %d %s).",
+                self._consecutive_failures,
+                "eșec" if self._consecutive_failures == 1 else "eșecuri consecutive",
+            )
         self._consecutive_failures = 0
 
         server_status = result.get("status")
         _LOGGER.debug(
-            "[Ebloc:License] Status de la server: %s (valid_until: %s)",
+            "Stare primită de la serverul de licențe | %s | valabilă până la (timestamp) %s",
             server_status, result.get("valid_until"),
         )
 
@@ -492,7 +502,7 @@ class LicenseManager:
         try:
             http_status, result = await self._async_signed_post("validate", payload, timeout)
         except Exception as err:  # noqa: BLE001
-            _LOGGER.debug("[Ebloc:License] /validate eșuat (rețea) — %s", err)
+            _LOGGER.debug("Serverul de licențe | /validate | solicitarea nu a putut fi trimisă: %s", err)
             return False
 
         if http_status == 200 and result.get("valid"):
@@ -501,7 +511,7 @@ class LicenseManager:
             return True
 
         error = result.get("error") or f"http_{http_status}"
-        _LOGGER.warning("[Ebloc:License] /validate respins — %s", error)
+        _LOGGER.warning("Serverul de licențe | /validate | licența a fost respinsă: %s", error)
         if error in _VALIDATE_DEFINITIVE_ERRORS and not self._revalidating:
             # Licența nu mai e activă pe acest dispozitiv (revocată, mutată, expirată):
             # nu mai așteptăm expirarea cache-ului — cerem imediat statusul real.
@@ -593,16 +603,16 @@ class LicenseManager:
                 if not self._cache_expiry_warned:
                     grace_end = self._status_token.get("valid_until", 0) + self._GRACE_LICENSED_SEC
                     _LOGGER.warning(
-                        "[Ebloc:License] Server inaccesibil — funcționare în perioada "
-                        "de grație (%d ore rămase)",
+                        "Serverul de licențe nu poate fi contactat; integrarea funcționează în "
+                        "perioada de grație (ore rămase: %d).",
                         max(0, int((grace_end - time.time()) / 3600)),
                     )
                     self._cache_expiry_warned = True
                 return True
             if not self._cache_expiry_warned:
                 _LOGGER.warning(
-                    "[Ebloc:License] Cache expirat + perioadă de grație depășită "
-                    "— licență invalidă. Verificați conexiunea la server."
+                    "Perioada de grație s-a încheiat fără un răspuns de la serverul de licențe; "
+                    "licența este considerată nevalidă. Verificați conexiunea la internet."
                 )
                 self._cache_expiry_warned = True
             return False
@@ -745,19 +755,19 @@ class LicenseManager:
         try:
             http_status, result = await self._async_signed_post("activate", payload)
         except Exception as err:  # noqa: BLE001
-            _LOGGER.error("[Ebloc:License] eroare de rețea la activare — %s", err)
+            _LOGGER.error("Activarea licenței nu a putut fi trimisă (eroare de rețea): %s", err)
             return {"success": False, "error": "network_error"}
 
         if http_status != 200:
             _LOGGER.warning(
-                "[Ebloc:License] activare eșuată — HTTP %d %s",
-                http_status, result.get("detail") or result.get("error") or "",
+                "Activarea licenței a fost refuzată | HTTP %d | %s",
+                http_status, result.get("detail") or result.get("error") or "fără detalii",
             )
             return {"success": False, "error": f"http_{http_status}"}
 
         if not result.get("success"):
             error = result.get("error", "unknown_error")
-            _LOGGER.warning("[Ebloc:License] activare eșuată — %s", error)
+            _LOGGER.warning("Activarea licenței a fost refuzată: %s", error)
             return {"success": False, "error": error}
 
         token = result.get("token") or {}
@@ -776,10 +786,7 @@ class LicenseManager:
         await self._async_save()
 
         await self.async_check_status(force=True)
-        _LOGGER.info(
-            "[Ebloc:License] licență activată cu succes (%s)",
-            token.get("license_type", "necunoscut"),
-        )
+        _LOGGER.info("Licență activată | tip: %s", token.get("license_type", "necunoscut"))
         # Senzorii se recreează cu licența validă
         await self._async_reload_entries()
         return {"success": True}
@@ -801,7 +808,7 @@ class LicenseManager:
         try:
             http_status, result = await self._async_signed_post("deactivate", payload)
         except Exception as err:  # noqa: BLE001
-            _LOGGER.error("[Ebloc:License] eroare la dezactivare — %s", err)
+            _LOGGER.error("Dezactivarea licenței nu a putut fi trimisă (eroare de rețea): %s", err)
             return {"success": False, "error": "network_error"}
 
         if http_status != 200 or not result.get("success"):
@@ -813,7 +820,7 @@ class LicenseManager:
         await self._async_save()
 
         await self.async_check_status(force=True)
-        _LOGGER.info("[Ebloc:License] licență dezactivată cu succes")
+        _LOGGER.info("Licență dezactivată.")
         await self._async_reload_entries()
         return {"success": True}
 
@@ -835,11 +842,11 @@ class LicenseManager:
             http_status, result = await self._async_signed_post("notify", payload, timeout=10)
             if http_status != 200 or not result.get("success"):
                 _LOGGER.debug(
-                    "[Ebloc:License] Notify '%s' refuzat: HTTP %d %s",
-                    action, http_status, result.get("error"),
+                    "Serverul de licențe a refuzat evenimentul „%s” | HTTP %d | %s",
+                    action, http_status, result.get("error") or "fără detalii",
                 )
         except Exception as err:  # noqa: BLE001
-            _LOGGER.debug("[Ebloc:License] Nu s-a putut raporta '%s': %s", action, err)
+            _LOGGER.debug("Evenimentul „%s” nu a putut fi trimis la serverul de licențe: %s", action, err)
 
     # ─── Reload entries ───
 
@@ -848,9 +855,10 @@ class LicenseManager:
         entries = self._hass.config_entries.async_entries(DOMAIN)
         if not entries:
             return
-        _LOGGER.info(
-            "[Ebloc:License] Reîncarc %d entry-uri după schimbarea licenței",
-            len(entries),
+        # Debug: apelantul (activare, dezactivare, verificare periodică) anunță deja motivul
+        _LOGGER.debug(
+            "Se reîncarcă %s după schimbarea licenței.",
+            "1 intrare" if len(entries) == 1 else f"{len(entries)} intrări",
         )
         for entry in entries:
             self._hass.async_create_task(
@@ -894,15 +902,11 @@ class LicenseManager:
                 except Exception:  # noqa: BLE001
                     continue
 
-            _LOGGER.warning(
-                "[Ebloc:License] nicio cheie publică nu a validat semnătura"
-            )
+            _LOGGER.warning("Semnătura răspunsului de licență nu a fost validată de nicio cheie publică.")
             return False
 
         except Exception as err:  # noqa: BLE001
-            _LOGGER.debug(
-                "[Ebloc:License] verificare semnătură eșuată — %s", err
-            )
+            _LOGGER.debug("Verificarea semnăturii de licență a eșuat: %s", err)
             return False
 
     def _compute_request_hmac(self, payload: dict[str, Any]) -> str:

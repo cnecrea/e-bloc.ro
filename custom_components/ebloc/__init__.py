@@ -79,16 +79,27 @@ def _update_license_notifications(hass: HomeAssistant, mgr: LicenseManager) -> N
         notif_title = "E-bloc România — Licența a expirat"
         notif_message = (
             "Licența pentru integrarea **E-bloc România** a expirat.\n\n"
-            "Senzorii sunt dezactivați până la reînnoirea licenței.\n\n"
+            "Senzorii, butoanele și selectoarele sunt dezactivate până la reînnoirea licenței.\n\n"
             f"[Reînnoiește licența]({LICENSE_PURCHASE_URL})"
         )
-    else:
+    elif mgr.status == "expired":
         issue_id = "trial_expired"
-        notif_title = "E-bloc România — Licența de probă a expirat"
+        notif_title = "E-bloc România — Perioada de evaluare s-a încheiat"
         notif_message = (
             "Perioada de evaluare gratuită pentru integrarea **E-bloc România** s-a încheiat.\n\n"
-            "Senzorii sunt dezactivați până la obținerea unei licențe.\n\n"
-            f"[Obține o licență acum]({LICENSE_PURCHASE_URL})"
+            "Senzorii, butoanele și selectoarele sunt dezactivate până la obținerea unei licențe.\n\n"
+            f"[Obține o licență]({LICENSE_PURCHASE_URL})"
+        )
+    else:
+        # „unlicensed": nicio licență activă sau serverul de licențe nu a putut fi contactat
+        issue_id = "trial_expired"
+        notif_title = "E-bloc România — Nu există o licență activă"
+        notif_message = (
+            "Integrarea **E-bloc România** nu are o licență activă, sau licența nu a putut "
+            "fi verificată.\n\n"
+            "Senzorii, butoanele și selectoarele sunt dezactivate până la activarea unei licențe. "
+            "Cheia se introduce în opțiunile integrării E-bloc România, la „Licență”.\n\n"
+            f"[Obține o licență]({LICENSE_PURCHASE_URL})"
         )
 
     other_id = "license_expired" if issue_id == "trial_expired" else "trial_expired"
@@ -113,7 +124,7 @@ def _update_license_notifications(hass: HomeAssistant, mgr: LicenseManager) -> N
         notification_id="ebloc_license_expired",
     )
 
-    _LOGGER.debug("[E-bloc] Notificare expirare creată: %s", issue_id)
+    _LOGGER.debug("Notificare de licență creată | %s", issue_id)
 
 
 def _cleanup_domain(hass: HomeAssistant) -> None:
@@ -153,13 +164,13 @@ def _schedule_license_check(hass: HomeAssistant, mgr: LicenseManager) -> None:
                 return  # integrarea a fost descărcată în timpul verificării
             if was_valid != now_valid:
                 if now_valid:
-                    _LOGGER.info("[Ebloc] Licența a redevenit validă — reîncarc")
+                    _LOGGER.info("Licența a redevenit validă; integrarea se reîncarcă.")
                 else:
-                    _LOGGER.warning("[Ebloc] Licența a devenit invalidă — reîncarc")
+                    _LOGGER.warning("Licența nu mai este validă; integrarea se reîncarcă.")
                 _update_license_notifications(hass, mgr)
                 await mgr._async_reload_entries()
         except Exception:  # noqa: BLE001 — timer-ul nu trebuie să se oprească
-            _LOGGER.exception("[Ebloc] Eroare la verificarea periodică a licenței")
+            _LOGGER.exception("Verificarea periodică a licenței a eșuat.")
         finally:
             _schedule_license_check(hass, mgr)
 
@@ -204,10 +215,7 @@ async def _async_wait_license_loaded(hass: HomeAssistant) -> None:
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     """Configurează integrarea pentru o anumită intrare (config entry)."""
-    _LOGGER.info(
-        "[Ebloc] Se configurează integrarea (entry_id=%s).",
-        entry.entry_id,
-    )
+    _LOGGER.debug("Configurare începută | intrarea %s", entry.entry_id)
 
     hass.data.setdefault(DOMAIN, {})
 
@@ -227,12 +235,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
             hass.data[DOMAIN].pop(LICENSE_DATA_KEY, None)
             hass.data[DOMAIN].pop("_license_load", None)
             raise
-        _LOGGER.debug(
-            "[Ebloc] LicenseManager: status=%s, valid=%s, fingerprint=%s...",
-            license_mgr.status,
-            license_mgr.is_valid,
-            license_mgr.fingerprint[:16],
-        )
         _schedule_license_check(hass, license_mgr)
 
         # Notificare re-enable
@@ -242,11 +244,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         await _async_wait_license_loaded(hass)
 
     license_mgr = hass.data[DOMAIN][LICENSE_DATA_KEY]
-    if not license_mgr.is_valid:
-        _LOGGER.warning(
-            "[Ebloc] Integrarea nu are licență validă. "
-            "Senzorii vor afișa 'Licență necesară'."
-        )
+    # Starea licenței e logată o singură dată, de license.py (async_load)
     # La FIECARE setup — după activare, reload-ul intrărilor șterge notificările
     # chiar dacă managerul de licențe rămâne același (mai multe conturi).
     _update_license_notifications(hass, license_mgr)
@@ -262,7 +260,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     saved_session = entry.data.get("session_data")
     if saved_session:
         api_client.inject_session(saved_session)
-        _LOGGER.debug("[Ebloc] Sesiune injectată din config_entry")
+        _LOGGER.debug("Sesiune existentă restaurată din configurația intrării.")
 
     # ── Coordinator (cu interval configurabil) ──
     update_interval = entry.data.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL)
@@ -285,10 +283,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     # Listener pentru modificarea opțiunilor
     entry.async_on_unload(entry.add_update_listener(_async_update_options))
 
-    _LOGGER.info(
-        "[Ebloc] Integrarea configurată (entry_id=%s).",
-        entry.entry_id,
-    )
+    _LOGGER.debug("Configurare finalizată | intrarea %s", entry.entry_id)
     return True
 
 
@@ -301,16 +296,13 @@ async def _async_update_options(hass: HomeAssistant, entry: ConfigEntry):
     runtime = getattr(entry, "runtime_data", None)
     if runtime is not None and runtime.config_signature == _config_signature(entry):
         return
-    _LOGGER.info("[Ebloc] Configurația s-a schimbat. Se reîncarcă...")
+    _LOGGER.info("Configurația s-a schimbat; integrarea se reîncarcă.")
     await hass.config_entries.async_reload(entry.entry_id)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
     """Descărcarea intrării din config_entries."""
-    _LOGGER.info(
-        "[Ebloc] async_unload_entry entry_id=%s",
-        entry.entry_id,
-    )
+    _LOGGER.debug("Descărcare începută | intrarea %s", entry.entry_id)
 
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
@@ -324,7 +316,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
         }
 
         if not entry_ids_ramase:
-            _LOGGER.info("[Ebloc] Ultima entry descărcată — curăț domeniul complet")
+            _LOGGER.debug("Ultima intrare a fost descărcată; resursele comune ale integrării se eliberează.")
 
             # Notificare lifecycle
             mgr = hass.data.get(DOMAIN, {}).get(LICENSE_DATA_KEY)
@@ -341,17 +333,15 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
                     )
 
             _cleanup_domain(hass)
-
-            _LOGGER.info("[Ebloc] Cleanup complet")
     else:
-        _LOGGER.error("[Ebloc] Unload EȘUAT pentru entry_id=%s", entry.entry_id)
+        _LOGGER.error("Descărcarea a eșuat | intrarea %s", entry.entry_id)
 
     return unload_ok
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Notifică serverul când integrarea e complet eliminată."""
-    _LOGGER.debug("[Ebloc] async_remove_entry entry_id=%s", entry.entry_id)
+    _LOGGER.debug("Intrare ștearsă | intrarea %s", entry.entry_id)
 
     remaining = hass.config_entries.async_entries(DOMAIN)
     if not remaining:
@@ -415,10 +405,11 @@ async def _send_lifecycle_event(
             if resp.status == 200:
                 result = await resp.json()
                 if not result.get("success"):
-                    _LOGGER.warning(
-                        "[Ebloc] Server a refuzat '%s': %s",
+                    _LOGGER.debug(
+                        "Serverul de licențe a refuzat evenimentul „%s” | HTTP %d | %s",
                         action,
-                        result.get("error"),
+                        resp.status,
+                        result.get("error") or "fără detalii",
                     )
     except Exception as err:  # noqa: BLE001
-        _LOGGER.debug("[Ebloc] Nu s-a putut raporta '%s': %s", action, err)
+        _LOGGER.debug("Evenimentul „%s” nu a putut fi trimis la serverul de licențe: %s", action, err)

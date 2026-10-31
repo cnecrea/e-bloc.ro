@@ -21,7 +21,7 @@ from homeassistant.components.sensor import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
-from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
@@ -36,7 +36,14 @@ from .const import (
     NR_PERS_MULTIPLIER,
 )
 from .coordinator import EblocCoordinator
-from .helpers import is_license_valid, luna_ro, luna_ro_scurt
+from .helpers import (
+    association_device,
+    contor_suffix,
+    index_for,
+    is_license_valid,
+    luna_ro,
+    luna_ro_scurt,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -57,15 +64,7 @@ def _first_association_id(coordinator: EblocCoordinator) -> int | None:
     return None
 
 
-def _association_device(id_user: int, id_asoc) -> DeviceInfo:
-    """Device per asociație — fiecare asociație are propriul dispozitiv."""
-    return DeviceInfo(
-        identifiers={(DOMAIN, f"{id_user}_{id_asoc}")},
-        name=f"E-bloc România ({id_asoc})",
-        manufacturer="Ciprian Nicolae (cnecrea)",
-        model="E-bloc România",
-        entry_type=DeviceEntryType.SERVICE,
-    )
+_association_device = association_device
 
 
 # ──────────────────────────────────────────────
@@ -179,6 +178,11 @@ async def async_setup_entry(
             assoc_by_id[aid] = a
 
     for id_asoc, ap_list in apartments.items():
+        # 3. Asociație — o singură entitate per asociație (înainte: câte una per apartament,
+        # adică identificatori duplicați când contul avea mai multe apartamente în asociație)
+        assoc_info = assoc_by_id.get(str(id_asoc), {})
+        entities.append(AsociatieSensor(coordinator, id_user, id_asoc, assoc_info))
+
         for ap in ap_list:
             id_ap = ap.get("id_ap", ap.get("id", 0))
             if not id_ap:
@@ -186,35 +190,22 @@ async def async_setup_entry(
 
             ap_key = f"{id_asoc}:{id_ap}"
 
-            # 3. Asociație
-            assoc_info = assoc_by_id.get(str(id_asoc), {})
-            entities.append(
-                AsociatieSensor(coordinator, id_user, id_asoc, assoc_info)
-            )
-
-            # 4. Index/Contoare — DOAR dacă id_contor are intrare în aInfoIndex
+            # 4. Index/Contoare — doar contoarele care au index pentru acest apartament
             ap_data_dict = data.get("per_apartment", {}).get(ap_key, {})
             contoare_data = ap_data_dict.get("contoare", {})
-            contoare_defs = contoare_data.get("aInfoContoare", [])
-            contoare_vals = contoare_data.get("aInfoIndex", [])
+            suffix = contor_suffix(data, id_asoc, id_ap)
 
-            idx_by_contor: dict[str, dict[str, Any]] = {}
-            for cv in contoare_vals:
-                cid = str(cv.get("id_contor", ""))
-                if cid:
-                    idx_by_contor[cid] = cv
-
-            for contor_def in contoare_defs:
+            for contor_def in contoare_data.get("aInfoContoare", []):
                 id_contor = str(contor_def.get("id_contor", ""))
                 if not id_contor:
                     continue
-                contor_val = idx_by_contor.get(id_contor)
+                contor_val = index_for(contoare_data, id_contor, id_ap)
                 if contor_val is None:
                     continue
                 entities.append(
                     IndexContorSensor(
                         coordinator, id_user, id_asoc, id_ap,
-                        int(id_contor), contor_def, contor_val,
+                        int(id_contor), contor_def, contor_val, suffix,
                     )
                 )
 
@@ -243,10 +234,7 @@ async def async_setup_entry(
                 CitirePermisaSensor(coordinator, id_user, id_asoc, id_ap)
             )
 
-    _LOGGER.info(
-        "[Ebloc:Sensor] Creez %d senzori pentru user %s",
-        len(entities), id_user,
-    )
+    _LOGGER.debug("Platformă încărcată | senzori: %d", len(entities))
     async_add_entities(entities, update_before_add=True)
 
 
@@ -523,7 +511,7 @@ class IndexContorSensor(EblocEntity):
     def __init__(
         self, coordinator: EblocCoordinator, id_user: int,
         id_asoc, id_ap, id_contor: int,
-        contor_def: dict, contor_val: dict,
+        contor_def: dict, contor_val: dict, suffix: str = "",
     ) -> None:
         super().__init__(coordinator, id_user)
         self._id_asoc = id_asoc
@@ -536,31 +524,28 @@ class IndexContorSensor(EblocEntity):
         titlu_slug = ha_slugify(titlu)
         self._titlu = titlu
         self._attr_name = f"Index {titlu}"
-        self._attr_unique_id = f"{DOMAIN}_{id_user}_{id_asoc}_{id_contor}"
-        self._custom_entity_id = f"sensor.{DOMAIN}_{id_user}_{id_asoc}_index_{titlu_slug}"
+        # suffix = "" pentru un singur apartament în asociație → identificatorii existenți rămân
+        self._attr_unique_id = f"{DOMAIN}_{id_user}_{id_asoc}_{id_contor}{suffix}"
+        self._custom_entity_id = f"sensor.{DOMAIN}_{id_user}_{id_asoc}_index_{titlu_slug}{suffix}"
 
     @property
     def device_info(self) -> DeviceInfo:
         return _association_device(self._id_user, self._id_asoc)
 
     def _find_contor_val(self) -> dict[str, Any] | None:
-        """Caută datele contorului în aInfoIndex actualizat."""
+        """Indexul contorului pentru acest apartament, din datele curente."""
         ap_data = self._get_ap_data(self._id_asoc, self._id_ap)
-        contoare = ap_data.get("contoare", {})
-        for cv in contoare.get("aInfoIndex", []):
-            if str(cv.get("id_contor")) == str(self._id_contor):
-                return cv
-        if self._contor_val_initial:
-            return self._contor_val_initial
-        return None
+        cv = index_for(ap_data.get("contoare", {}), self._id_contor, self._id_ap)
+        return cv or self._contor_val_initial or None
 
     @property
-    def native_value(self) -> float | str:
+    def native_value(self) -> float | str | None:
         if not self._license_valid:
             return "Licență necesară"
         cv = self._find_contor_val()
         if not cv:
-            return 0.0
+            # Necunoscut, nu 0: un 0 la un senzor TOTAL_INCREASING ar fi văzut ca resetare de contor
+            return None
 
         # Prioritate: index_nou (dacă există și nu e null), altfel index_vechi
         raw_nou = cv.get("index_nou")
@@ -579,10 +564,10 @@ class IndexContorSensor(EblocEntity):
             try:
                 index_val = int(raw_vechi)
             except (ValueError, TypeError):
-                return 0.0
+                return None
 
         if index_val == INDEX_NOT_SET:
-            return 0.0
+            return None
         return round(index_val / NR_PERS_MULTIPLIER, 3)
 
     @property
@@ -687,9 +672,18 @@ class FacturaRestantaSensor(EblocEntity):
                         return int(tp)
                     except (ValueError, TypeError):
                         return 0
-        tp = self._ap_info.get("total_plata", 0)
+        # Fără pagina „Plătește": total_plata din apartamentele curente (AppHomeGetAp),
+        # nu din copia făcută la pornire
+        apartments = (self.coordinator.data or {}).get("apartments", {})
+        ap_info = next(
+            (
+                a for a in apartments.get(self._id_asoc, apartments.get(str(self._id_asoc), []))
+                if str(a.get("id_ap", a.get("id", ""))) == str(self._id_ap)
+            ),
+            self._ap_info,
+        )
         try:
-            return int(tp)
+            return int(ap_info.get("total_plata", 0))
         except (ValueError, TypeError):
             return 0
 
@@ -1080,10 +1074,10 @@ class CitirePermisaSensor(EblocEntity):
                 if start_date and today >= start_date:
                     return "Da"
                 return "Nu"
-            except Exception as err:
+            except Exception:
                 _LOGGER.exception(
-                    "Eroare la determinarea stării CitirePermisa (asoc=%s): %s",
-                    self._id_asoc, err,
+                    "Perioada de citire a asociației %s nu a putut fi interpretată.",
+                    self._id_asoc,
                 )
                 return "Eroare"
 
