@@ -6347,6 +6347,38 @@
           "vizite": 3,
           "vizitatori_unici": 2
         }
+      ],
+      "clones_total": 11,
+      "clones_unice": 6,
+      "views_total": 4,
+      "views_unice": 1
+    },
+    "2026-11-02": {
+      "stars": 25,
+      "forks": 6,
+      "watchers": 2,
+      "open_issues": 0,
+      "referrers": [
+        {
+          "sursa": "aocr.org",
+          "vizite": 44,
+          "vizitatori_unici": 44
+        },
+        {
+          "sursa": "github.com",
+          "vizite": 6,
+          "vizitatori_unici": 5
+        },
+        {
+          "sursa": "hubinteligent.org",
+          "vizite": 4,
+          "vizitatori_unici": 2
+        },
+        {
+          "sursa": "Google",
+          "vizite": 3,
+          "vizitatori_unici": 2
+        }
       ]
     }
   },
@@ -6365,5 +6397,5 @@
     "1.1.0": 6,
     "1.0.0": 6
   },
-  "ultima_actualizare": "2026-11-01T13:04:36Z"
+  "ultima_actualizare": "2026-11-02T15:28:05Z"
 }
