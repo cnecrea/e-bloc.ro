@@ -76,29 +76,25 @@ def _update_license_notifications(hass: HomeAssistant, mgr: LicenseManager) -> N
 
     if mgr.has_license:
         issue_id = "license_expired"
-        notif_title = "E-bloc România — Licența a expirat"
+        notif_title = "Licența E-bloc România a expirat"
         notif_message = (
-            "Licența pentru integrarea **E-bloc România** a expirat.\n\n"
-            "Senzorii, butoanele și selectoarele sunt dezactivate până la reînnoirea licenței.\n\n"
-            f"[Reînnoiește licența]({LICENSE_PURCHASE_URL})"
+            "Senzorii integrării **E-bloc România** nu se mai actualizează până la reînnoirea licenței.\n\n"
+            f"[Obține o licență nouă]({LICENSE_PURCHASE_URL})"
         )
     elif mgr.status == "expired":
         issue_id = "trial_expired"
-        notif_title = "E-bloc România — Perioada de evaluare s-a încheiat"
+        notif_title = "Perioada de test E-bloc România s-a încheiat"
         notif_message = (
-            "Perioada de evaluare gratuită pentru integrarea **E-bloc România** s-a încheiat.\n\n"
-            "Senzorii, butoanele și selectoarele sunt dezactivate până la obținerea unei licențe.\n\n"
+            "Senzorii integrării **E-bloc România** nu se mai actualizează până la activarea unei licențe.\n\n"
             f"[Obține o licență]({LICENSE_PURCHASE_URL})"
         )
     else:
-        # „unlicensed": nicio licență activă sau serverul de licențe nu a putut fi contactat
+        # „unlicensed”: nicio licență activă sau licența nu a putut fi verificată
         issue_id = "trial_expired"
-        notif_title = "E-bloc România — Nu există o licență activă"
+        notif_title = "Licența E-bloc România nu este activă"
         notif_message = (
-            "Integrarea **E-bloc România** nu are o licență activă, sau licența nu a putut "
-            "fi verificată.\n\n"
-            "Senzorii, butoanele și selectoarele sunt dezactivate până la activarea unei licențe. "
-            "Cheia se introduce în opțiunile integrării E-bloc România, la „Licență”.\n\n"
+            "Integrarea **E-bloc România** nu are o licență activă sau licența nu a putut fi verificată, așa că senzorii "
+            "nu se actualizează. Cheia se introduce în Configurare → Licență.\n\n"
             f"[Obține o licență]({LICENSE_PURCHASE_URL})"
         )
 

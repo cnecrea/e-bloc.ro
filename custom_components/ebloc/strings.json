@@ -22,12 +22,12 @@
   },
   "issues": {
     "trial_expired": {
-      "title": "Trial expired — E-bloc România",
-      "description": "The free trial period has ended.\n\nSensors are disabled until a license is obtained.\n\n[Get a license now]({learn_more_url})"
+      "title": "The E-bloc România free trial has ended",
+      "description": "Sensors stop updating until a license is activated.\n\n[Get a license]({learn_more_url})"
     },
     "license_expired": {
-      "title": "License expired — E-bloc România",
-      "description": "The license for this integration has expired.\n\nSensors are disabled until the license is renewed.\n\n[Renew license]({learn_more_url})"
+      "title": "The E-bloc România license has expired",
+      "description": "Sensors stop updating until the license is renewed.\n\n[Get a new license]({learn_more_url})"
     }
   },
   "options": {
@@ -39,10 +39,13 @@
         }
       },
       "licenta": {
-        "title": "Licență E-bloc România",
-        "description": "Status: {license_status}\n\nIntroduceți cheia de licență pentru activare:",
+        "title": "E-bloc România license",
+        "description": "{license_status}\n\nEnter the license key you received by email.",
         "data": {
-          "license_key": "Cheie de licență"
+          "license_key": "License key"
+        },
+        "data_description": {
+          "license_key": "The key from your license email, in the form EBLC-XXXX-XXXX-XXXX-XXXX."
         }
       },
       "reconfigure": {
@@ -58,13 +61,13 @@
     "error": {
       "auth_failed": "Autentificare eșuată.",
       "autodiscover_failed": "Autodiscovery eșuat.",
-      "license_key_empty": "Cheia de licență nu poate fi goală.",
-      "license_key_invalid": "Cheie de licență invalidă.",
-      "license_already_used": "Această cheie a fost deja utilizată.",
-      "license_key_expired": "Cheia de licență a expirat.",
-      "license_fingerprint_mismatch": "Cheia nu corespunde acestui dispozitiv.",
-      "license_network_error": "Eroare de rețea la verificarea licenței.",
-      "license_server_error": "Eroare server la verificarea licenței.",
+      "license_key_empty": "Enter the license key.",
+      "license_key_invalid": "This key is not valid for E-bloc România. Copy the whole key from the email: keys for this integration start with EBLC-.",
+      "license_already_used": "This key is active on another Home Assistant instance. The license email address receives a link to move it; after you confirm, enter the key here again.",
+      "license_key_expired": "This license key has expired.",
+      "license_fingerprint_mismatch": "Activation could not be confirmed for this instance. Try again; if the message repeats, use the “License problem” form.",
+      "license_network_error": "The license server cannot be reached. Check that Home Assistant has internet access and try again.",
+      "license_server_error": "The license server could not check the key right now. Try again in a few minutes.",
       "already_configured": "Acest cont e-bloc este deja configurat."
     }
   }

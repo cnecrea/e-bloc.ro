@@ -263,7 +263,7 @@ class LicentaNecesaraSensor(EblocEntity):
         if mgr is None:
             return "Licență necesară"
         if mgr.status == "expired":
-            return "Licență expirată" if mgr.has_license else "Evaluare expirată"
+            return "Licență expirată" if mgr.has_license else "Perioadă de test încheiată"
         return "Licență necesară"
 
     @property
